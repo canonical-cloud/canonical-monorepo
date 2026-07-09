@@ -120,10 +120,28 @@ for i in "${!module_paths[@]}"; do
 
   if [[ -z "$module_url" ]]; then
     fail "$module_path is missing a submodule URL"
+  elif [[ ! "$module_url" =~ ^git@github\.com:canonical-cloud/ ]]; then
+    fail "$module_path url is not an SSH canonical-cloud remote: $module_url"
   fi
 
   if [[ -z "$module_branch" ]]; then
     fail "$module_path is missing a submodule branch"
+  elif [[ "$module_branch" != "main" ]]; then
+    fail "$module_path submodule branch is '$module_branch', expected 'main'"
+  fi
+
+  # The recorded gitlink must be an ancestor of (or equal to) the tracked branch
+  # on the remote — i.e. the pin points at real, pushed history, not a local-only
+  # or detached commit. (Skipped when the remote can't be reached.)
+  if [[ -d "$module_path" ]]; then
+    pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
+    if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
+      if [[ -n "$pinned_sha" ]] && ! git -C "$module_path" merge-base --is-ancestor "$pinned_sha" FETCH_HEAD 2>/dev/null; then
+        fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
+      fi
+    else
+      warn "$module_path: could not fetch origin/$module_branch to verify the pin"
+    fi
   fi
 
   if [[ ! -d "$module_path" ]]; then
