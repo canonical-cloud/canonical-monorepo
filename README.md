@@ -10,13 +10,16 @@ repo's main branch.
 
 ## Apps
 
-| Submodule                    | Stack        | Repo |
-| ---------------------------- | ------------ | ---- |
-| `apps/canonical-backend.rs`  | Rust / axum  | [canonical-backend.rs](https://github.com/canonical-cloud/canonical-backend.rs) |
-| `apps/canonical-frontend`    | Astro        | [canonical-frontend](https://github.com/canonical-cloud/canonical-frontend) |
+| Submodule                    | Stack             | Repo |
+| ---------------------------- | ----------------- | ---- |
+| `apps/canonical-backend.rs`  | Rust / axum       | [canonical-backend.rs](https://github.com/canonical-cloud/canonical-backend.rs) |
+| `apps/canonical-frontend`    | Astro             | [canonical-frontend](https://github.com/canonical-cloud/canonical-frontend) |
+| `apps/canonical-interfaces`  | JSON Schema / SQL | [canonical-interfaces](https://github.com/canonical-cloud/canonical-interfaces) |
 
 `canonical-frontend` builds the static site; `canonical-backend.rs` serves it
-(plus a small JSON API). See `docs/repo-boundaries.md`.
+(plus a small JSON API); `canonical-interfaces` is the typed-IO source of truth
+(JSON Schema + SQL) that the API and clients generate types from. See
+`docs/repo-boundaries.md`.
 
 ## Clone
 

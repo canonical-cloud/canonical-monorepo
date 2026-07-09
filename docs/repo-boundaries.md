@@ -10,6 +10,9 @@ app source directly.
   site from `STATIC_DIR` and exposes `/healthz` + `/api/{health,info}`. Public.
 - **`canonical-frontend`** — Astro static marketing site (SOC 2 / FedRAMP /
   HIPAA). Builds to `dist/`, which the backend serves. Public.
+- **`canonical-interfaces`** — typed-IO source of truth: JSON Schema for the
+  HTTP API + SQL for the compliance store, generated into TS/Rust/Python/Go
+  adapters. The backend and clients consume its generated types. Public.
 
 Each app is its own repo with its own visibility, CI, Dockerfile, `agents.md`,
 and Nix dev shell. The superproject is the all-up integration / GitOps view.
