@@ -140,15 +140,29 @@ for i in "${!module_paths[@]}"; do
     fail "README.md app list is missing $module_path"
   fi
 
-  if [[ ! -f "$module_path/Dockerfile" ]]; then
-    fail "$module_path is missing Dockerfile"
-  fi
-
-  if [[ ! -f "$module_path/.dockerignore" ]]; then
-    fail "$module_path is missing .dockerignore"
-  fi
-
+  # A submodule is a deployable *service* if it ships a runnable server: a Rust
+  # binary crate, or a web app with an Astro build. Library/interface repos (e.g.
+  # canonical-interfaces: schema + generated adapters) are not deployed and are
+  # exempt from the Dockerfile requirement.
+  is_rust_service=0
+  is_web_service=0
   if [[ -f "$module_path/Cargo.toml" && ( -f "$module_path/src/main.rs" || -d "$module_path/src/bin" ) ]]; then
+    is_rust_service=1
+  fi
+  if compgen -G "$module_path/astro.config.*" >/dev/null 2>&1; then
+    is_web_service=1
+  fi
+
+  if [[ "$is_rust_service" -eq 1 || "$is_web_service" -eq 1 ]]; then
+    if [[ ! -f "$module_path/Dockerfile" ]]; then
+      fail "$module_path (service) is missing Dockerfile"
+    fi
+    if [[ ! -f "$module_path/.dockerignore" ]]; then
+      fail "$module_path (service) is missing .dockerignore"
+    fi
+  fi
+
+  if [[ "$is_rust_service" -eq 1 && -f "$module_path/Dockerfile" ]]; then
     if ! grep -q '^FROM gcr.io/distroless/cc-debian12:nonroot$' "$module_path/Dockerfile"; then
       fail "$module_path Rust runtime image is not distroless nonroot"
     fi
