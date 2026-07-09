@@ -5,12 +5,21 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege: the workflow only reads the repo.
 permissions:
   contents: read
+
+# Cancel superseded runs on the same ref so a push doesn't pile up runners.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       # Submodule URLs in .gitmodules use SSH (git@github.com:...), but CI
       # authenticates over HTTPS with the default GITHUB_TOKEN. Rewrite SSH ->
@@ -18,16 +27,23 @@ jobs:
       # All app submodules are public.
       - name: Use HTTPS for submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
-      - uses: actions/checkout@v4
+      # Actions are pinned to commit SHAs (supply-chain hardening); the trailing
+      # comment records the human-readable version.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+          # Drop the checkout token from the local git config afterward; the audit
+          # step only re-fetches public submodules, which needs no auth.
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
       # Superproject contract specs; need submodules checked out (the contract
       # asserts apps/ dirs exist and reads each app's agents.md).
       - run: node --test tests/*.test.mjs
+      # Blocking gate: submodule wiring (SSH + branch=main), pins pushed to
+      # origin/main, service Dockerfiles are distroless, no tracked secrets /
+      # conflict markers.
       - name: audit repo state
         run: bash scripts/audit-repo-state.sh
-        continue-on-error: true
