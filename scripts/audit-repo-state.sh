@@ -185,8 +185,9 @@ for i in "${!module_paths[@]}"; do
       fail "$module_path Rust runtime image is not distroless nonroot"
     fi
 
-    if ! grep -q '^COPY --from=build --chown=65532:65532 ' "$module_path/Dockerfile"; then
-      fail "$module_path does not copy only the release binary into the runtime stage"
+    if ! grep -Eq '^COPY --from=[^[:space:]]+ --chown=65532:65532[[:space:]]' "$module_path/Dockerfile" \
+      || ! grep -q 'target/release/' "$module_path/Dockerfile"; then
+      fail "$module_path does not copy its release binary from a builder as nonroot"
     fi
   fi
 
