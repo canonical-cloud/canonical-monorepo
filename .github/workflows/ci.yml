@@ -76,3 +76,9 @@ jobs:
           workspaces: apps/canonical-web-server.rs
       - name: Build the pinned stack
         run: ./build.sh
+      # Boot the freshly built server with both built asset trees and prove the
+      # cross-repo runtime contracts: marketing fallback, /app-assets mount,
+      # health/readiness, JSON 404s, and /api/v1/{health,info} conformance to
+      # the canonical-interfaces schema pinned in apps/canonical-interfaces.
+      - name: Stack smoke (runtime contracts vs pinned interfaces)
+        run: bash scripts/stack-smoke.sh
