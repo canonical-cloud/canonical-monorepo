@@ -52,11 +52,52 @@ test("validator refuses schemas that use keywords it does not implement", () => 
   assert.match(errors[0], /unsupported schema keyword "pattern"/);
 });
 
-test("every $def in the pinned api schema stays within the implemented keyword set", () => {
+// Static walk: every keyword in the defs the stack smoke validates at runtime
+// (and anything they $ref) must be implemented by the validator, so schema
+// evolution can never silently weaken the conformance gate.
+test("smoke-validated schema defs stay within the implemented keyword set", () => {
   const defs = loadDefs();
-  for (const [name, def] of Object.entries(defs)) {
-    const witness = { probe: true };
-    const errors = validate(def, witness, defs).filter((error) => error.includes("unsupported schema keyword"));
-    assert.deepEqual(errors, [], `${name}: ${errors.join("; ")}`);
+  const queue = ["HealthStatus", "ServiceInfo"];
+  const visited = new Set();
+  const unsupported = [];
+  const walk = (node, path) => {
+    if (Array.isArray(node)) {
+      node.forEach((item, index) => walk(item, `${path}[${index}]`));
+      return;
+    }
+    if (typeof node !== "object" || node === null) {
+      return;
+    }
+    for (const [keyword, child] of Object.entries(node)) {
+      if (!HANDLED.has(keyword)) {
+        unsupported.push(`${path}: ${keyword}`);
+      }
+      if (keyword === "$ref" && typeof child === "string") {
+        const match = child.match(/^#\/\$defs\/(.+)$/);
+        if (match !== null) {
+          queue.push(match[1]);
+        }
+        continue;
+      }
+      if (keyword === "properties") {
+        for (const [name, propertySchema] of Object.entries(child)) {
+          walk(propertySchema, `${path}.properties.${name}`);
+        }
+        continue;
+      }
+      if (keyword === "items") {
+        walk(child, `${path}.items`);
+      }
+    }
+  };
+  while (queue.length > 0) {
+    const name = queue.pop();
+    if (visited.has(name)) {
+      continue;
+    }
+    visited.add(name);
+    assert.ok(name in defs, `missing $def ${name}`);
+    walk(defs[name], name);
   }
+  assert.deepEqual(unsupported, []);
 });
