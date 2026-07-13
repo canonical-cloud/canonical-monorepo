@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 
-const HANDLED = new Set([
+export const HANDLED = new Set([
   "type",
   "required",
   "properties",
