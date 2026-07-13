@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { validate } from "../scripts/validate-against-schema.mjs";
+import { HANDLED, validate } from "../scripts/validate-against-schema.mjs";
 
 const apiSchemaPath = fileURLToPath(
   new URL("../apps/canonical-interfaces/schema/api.schema.json", import.meta.url),
