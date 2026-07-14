@@ -96,8 +96,11 @@ scan_git_repo() {
     printf '%s\n' "$marker_output" >&2
   fi
 
+  # Covers GitHub classic/fine-grained/app tokens, Supabase secret keys,
+  # three-segment JWTs (Supabase service-role keys are JWTs), private keys,
+  # and AWS access-key IDs.
   secret_output="$(
-    git -C "$repo" grep -n -E 'ghp_[A-Za-z0-9]{36}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' -- . \
+    git -C "$repo" grep -n -E 'gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,}|sb_secret_[A-Za-z0-9_-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' -- . \
       ':(exclude)*.lock' \
       ':(exclude)dist/**' \
       ':(exclude)target/**' \
