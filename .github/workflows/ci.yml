@@ -54,6 +54,12 @@ jobs:
   # building the whole stack (Astro site, app client with its tests, locked
   # Rust release binary) at exactly the pinned submodule SHAs.
   integration-build:
+    # Gate on the audit job: it enforces that every submodule URL stays inside
+    # canonical-cloud BEFORE this job checks out submodules recursively and
+    # executes their build scripts (npm postinstall, cargo build.rs). Without
+    # this ordering a PR could repoint a submodule at an attacker repo and get
+    # code execution here in parallel with the failing audit.
+    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
