@@ -68,13 +68,19 @@ fi
 
 tracked_secret_paths="$(
   git ls-files \
-    | grep -E '(^|/)(env/|\.env($|\.)|.*\.(pem|key|p12|pfx)$)' \
+    | grep -E '(^|/)(env/|\.env($|\.)|id_rsa[^/]*$|.*\.(pem|key|p12|pfx|p8)$)' \
     | grep -v -E '(^|/)\.env\.example$' \
     || true
 )"
 if [[ -n "$tracked_secret_paths" ]]; then
   fail "tracked secret-like paths found"
   printf '%s\n' "$tracked_secret_paths" >&2
+fi
+
+# The deploy docs tell operators to keep real values in .env.local; make sure
+# an accidental `git add .env.local` can never be committed silently.
+if ! git check-ignore -q .env.local; then
+  fail ".env.local is not git-ignored; real env files must be unignorable"
 fi
 
 scan_git_repo() {
