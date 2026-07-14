@@ -77,6 +77,9 @@ its password outside Git, use it in the runtime `DATABASE_URL`, and re-run the
 bootstrap when future migrations change the table allow-list. Keep
 `AUTO_MIGRATE=false` for `serve`.
 
+Connection strings must use `sslmode=verify-full` (with the Supabase CA
+bundle installed) — `sslmode=require` encrypts but does not authenticate the
+server, so a spoofed endpoint could harvest the runtime credential.
 Supavisor session mode or a direct TLS connection is required for the
 long-lived SeaORM pool and PostgreSQL `LISTEN`/`NOTIFY` backplane; transaction
 mode cannot preserve listener state. Budget one listener connection per server
