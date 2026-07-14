@@ -61,6 +61,24 @@ platform rather than committing them. The server requires:
 - `STATIC_DIR` and `APP_ASSET_DIR` pointing at the two built browser asset
   directories.
 
+Schema changes against Supabase are managed declaratively with
+[dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs).
+The desired state lives in
+`apps/canonical-web-server.rs/deploy/postgres/schema.sql`; the web server's CI
+proves the SeaORM migrations converge with that file. To migrate a live
+Supabase database, generate, rehearse, and apply a reviewed diff (direct
+connection or session pooler only — never the transaction pooler):
+
+```sh
+dpm diff   --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+dpm verify --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+dpm apply  --source apps/canonical-web-server.rs/deploy/postgres/schema.sql            --target "$MIGRATION_DATABASE_URL" --shadow "$SHADOW_DATABASE_URL"
+```
+
+Destructive DDL stays commented out unless both dpm consent flags are given,
+and grants remain the bootstrap script's job. For a fresh database you can
+equally run the SeaORM migrations directly:
+
 Run SeaORM migrations and establish the explicit runtime grants before serving:
 
 ```sh
