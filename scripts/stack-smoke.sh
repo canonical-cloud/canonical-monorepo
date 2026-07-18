@@ -78,7 +78,8 @@ home="$(curl --fail --silent "$BASE/")"
 grep --quiet --ignore-case "<html" <<<"$home"
 
 echo "==> built client asset served under /app-assets"
-asset="$(cd "$CLIENT_DIST" && find . -type f \( -name '*.js' -o -name '*.css' \) | head -1 | sed 's|^\./||')"
+asset="$(cd "$CLIENT_DIST" && find . -type f \( -name '*.js' -o -name '*.css' \) | head -1)"
+asset="${asset#./}"
 if [[ -z "$asset" ]]; then
   echo "error: no built asset found in $CLIENT_DIST" >&2
   exit 1
