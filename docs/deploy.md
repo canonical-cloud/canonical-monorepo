@@ -108,6 +108,12 @@ committing them:
 - `STATIC_DIR` and `APP_ASSET_DIR` pointing at the two built browser asset
   directories.
 
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to the cluster collector's OTLP/gRPC endpoint
+to export explicit HTTP traces and low-cardinality request metrics. The
+collector exposes OTLP metrics to Prometheus. Structured application logs stay
+on stdout for Kubernetes CRI collection by Promtail and Loki; they are not sent
+through the OTLP exporter.
+
 The public gateway must terminate TLS, redirect cleartext traffic, and set HSTS
 for the public hostname. It must preserve `Origin` and WebSocket upgrade
 headers only for the application routes. The Rust fallback and the marketing
@@ -151,7 +157,8 @@ logins. The customer role gets only its explicit application allow-list; the
 revoker gets only the `web_session` operations required inside its fixed,
 transaction-local revocation task. Configure passwords outside Git, keep each
 URL in its own process environment, and re-run both scripts when migrations
-change their allow-lists. Keep `AUTO_MIGRATE=false` for `serve`.
+change their allow-lists. The `serve` command has no automatic migration path
+and never receives owner credentials.
 
 `bootstrap_admin_role.sql` is intentionally not part of this release startup.
 It exists for a future separately deployed admin application, which must first
