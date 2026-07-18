@@ -7,19 +7,22 @@
 #   - /api/v1/health and /api/v1/info conform to the canonical-interfaces
 #     JSON Schema pinned in apps/canonical-interfaces (the typed-IO seam)
 #   - unknown /api paths return JSON 404s, not marketing HTML
+#   - the separately built revoker binary can validate its isolated startup
+#     configuration without opening ingress
 #
-# Requires: ./build.sh already ran (release binary + both dists exist).
+# Requires: ./build.sh already ran (workspace binaries + both dists exist).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="$ROOT/apps/canonical-web-server.rs/target/release/canonical-web-server"
+REVOKER="$ROOT/apps/canonical-web-server.rs/target/release/canonical-session-revoker"
 MARKETING_DIST="$ROOT/apps/canonical-marketing-site.web/dist"
 CLIENT_DIST="$ROOT/apps/canonical-web-server.rs/client/dist"
 API_SCHEMA="$ROOT/apps/canonical-interfaces/schema/api.schema.json"
 PORT="${SMOKE_PORT:-18091}"
 BASE="http://127.0.0.1:$PORT"
 
-for artifact in "$SERVER" "$MARKETING_DIST/index.html" "$API_SCHEMA"; do
+for artifact in "$SERVER" "$REVOKER" "$MARKETING_DIST/index.html" "$API_SCHEMA"; do
   if [[ ! -e "$artifact" ]]; then
     echo "error: missing $artifact — run ./build.sh first" >&2
     exit 1
@@ -98,5 +101,14 @@ case "$not_found_type" in
     exit 1
     ;;
 esac
+
+echo "==> no-ingress session revoker accepts its isolated startup contract"
+RUST_LOG=warn \
+  APP_SESSION_ENCRYPTION_KEY="AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=" \
+  SESSION_REVOCATION_DATABASE_URL="sqlite::memory:" \
+  SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS=1 \
+  SUPABASE_URL="http://127.0.0.1:54321" \
+  SUPABASE_PUBLISHABLE_KEY="sb_publishable_smoke_only" \
+  "$REVOKER" check
 
 echo "stack smoke passed"
