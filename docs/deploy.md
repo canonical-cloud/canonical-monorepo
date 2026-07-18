@@ -61,6 +61,12 @@ platform rather than committing them. The server requires:
 - `STATIC_DIR` and `APP_ASSET_DIR` pointing at the two built browser asset
   directories.
 
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to the cluster collector's OTLP/gRPC endpoint
+to export explicit HTTP traces and low-cardinality request metrics. The
+collector exposes OTLP metrics to Prometheus. Structured application logs stay
+on stdout for Kubernetes CRI collection by Promtail and Loki; they are not sent
+through the OTLP exporter.
+
 Schema changes against Supabase are managed declaratively with
 [dpm](https://github.com/declarative-migrations/declarative-postgres-migrate.rs).
 The desired state lives in
@@ -92,8 +98,8 @@ unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_MAX_CONNECTIONS
 The bootstrap creates/reasserts `canonical_web_server` as a non-owner,
 non-`BYPASSRLS` login and grants only the current application tables. Configure
 its password outside Git, use it in the runtime `DATABASE_URL`, and re-run the
-bootstrap when future migrations change the table allow-list. Keep
-`AUTO_MIGRATE=false` for `serve`.
+bootstrap when future migrations change the table allow-list. The `serve`
+command has no automatic migration path and never receives owner credentials.
 
 Connection strings must use `sslmode=verify-full` (with the Supabase CA
 bundle installed) — `sslmode=require` encrypts but does not authenticate the
