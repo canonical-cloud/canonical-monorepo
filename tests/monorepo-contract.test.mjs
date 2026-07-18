@@ -141,10 +141,12 @@ test("pinned Rust service keeps bootstrap and runtime concerns modular", () => {
   const env = read(`${service}/.env.example`);
   const nonBlankLines = (source) => source.split(/\r?\n/).filter((line) => line.trim()).length;
 
-  assert.ok(
-    existsSync(path.join(root, service, "tests", "architecture.rs")),
-    "the deployable pin is missing the Rust architecture contract suite",
-  );
+  for (const suite of ["architecture.rs", "modularization.rs"]) {
+    assert.ok(
+      existsSync(path.join(root, service, "tests", suite)),
+      `the deployable pin is missing the Rust ${suite} contract suite`,
+    );
+  }
   for (const module of ["app", "command", "database", "server", "telemetry"]) {
     assert.ok(existsSync(path.join(root, service, "src", `${module}.rs`)), `${module}.rs is missing`);
     assert.match(library, new RegExp(`^pub mod ${module};$`, "m"));
