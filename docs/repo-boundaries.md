@@ -24,6 +24,9 @@ app source directly.
 - **`canonical-interfaces`** — typed-IO source of truth: JSON Schema for the
   HTTP API + SQL for the compliance store, generated into TS/Rust/Python/Go
   adapters. The web server and clients consume its generated types. Public.
+- **`canonical-mcp-server.rs`** — Rust MCP server for agent-facing organization,
+  repository, operational, and diagnostic tooling. It is reviewed and released
+  independently, then pinned here as a submodule. Public.
 
 Each app is its own repo with its own visibility, CI, Dockerfile, `agents.md`,
 and Nix dev shell. The superproject is the all-up integration / GitOps view.
@@ -38,6 +41,7 @@ and Nix dev shell. The superproject is the all-up integration / GitOps view.
 | Shared auth/session/config/store modules  | `canonical-web-server.rs/crates`                 |
 | Durable logout reconciliation             | `canonical-web-server.rs/services/canonical-session-revoker` |
 | Migrations and process-role grants         | `canonical-web-server.rs/deploy/postgres`        |
+| Agent-facing MCP operations               | `canonical-mcp-server.rs`                        |
 | Cross-repo asset and application build   | `build.sh` here                                  |
 | Submodule pins / branch pins             | `.gitmodules` + gitlinks here                    |
 | Shared automation                        | `scripts/` here                                  |

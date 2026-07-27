@@ -46,10 +46,11 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 3);
+  assert.equal(modules.length, 4);
   assert.deepEqual(paths, [
     "apps/canonical-interfaces",
     "apps/canonical-marketing-site.web",
+    "apps/canonical-mcp-server.rs",
     "apps/canonical-web-server.rs",
   ]);
 
