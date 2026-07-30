@@ -43,6 +43,7 @@ and Nix dev shell. The superproject is the all-up integration / GitOps view.
 | Migrations and process-role grants         | `canonical-web-server.rs/deploy/postgres`        |
 | Agent-facing MCP operations               | `canonical-mcp-server.rs`                        |
 | Cross-repo asset and application build   | `build.sh` here                                  |
+| Deployable web/revoker container release | `.github/workflows/release.yml` here             |
 | Submodule pins / branch pins             | `.gitmodules` + gitlinks here                    |
 | Shared automation                        | `scripts/` here                                  |
 
@@ -50,6 +51,9 @@ and Nix dev shell. The superproject is the all-up integration / GitOps view.
 
 - Change app code inside the submodule, push it there, **then** update the pin
   here with `scripts/pin-submodules.sh`.
+- App repositories may validate their Docker targets but do not publish the
+  deployable web or revoker images. Only this superproject's pinned-stack CI
+  may write those monorepo-owned GHCR packages.
 - Do not commit real `.env*` files. Only `.env.example` (placeholder values) is
   tracked; everything else matching `.env*` is gitignored.
 - Browsers never receive database credentials or server-held Supabase tokens.
