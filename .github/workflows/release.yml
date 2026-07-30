@@ -17,6 +17,8 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  # These packages are owned by this release repository. App repositories
+  # validate their Docker targets but never write deployable images.
   WEB_IMAGE: ghcr.io/canonical-cloud/canonical-web-server
   REVOKER_IMAGE: ghcr.io/canonical-cloud/canonical-session-revoker
   RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
