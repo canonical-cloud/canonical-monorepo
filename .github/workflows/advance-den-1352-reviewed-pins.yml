@@ -1,0 +1,96 @@
+name: Advance DEN-1352 reviewed pins
+
+on:
+  push:
+    branches: [sync/den-1352-reviewed-hardening-pins]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1352-reviewed-pins
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: true
+
+      - name: Advance only verified descendant gitlinks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          declare -A targets=(
+            [apps/canonical-interfaces]=90b8783005d03681c8d41121b5c9a3d4a9be1ae0
+            [apps/canonical-marketing-site.web]=88acbab6427f18a234df63f02cf7f804012ba6a1
+            [apps/canonical-mcp-server.rs]=cd6b87c7459ae533040389f72243d8d9a855de98
+            [apps/canonical-web-server.rs]=6b373a83aa2146f649eab0b2de09ac880b33ffbe
+          )
+
+          paths=(
+            apps/canonical-interfaces
+            apps/canonical-marketing-site.web
+            apps/canonical-mcp-server.rs
+            apps/canonical-web-server.rs
+          )
+
+          for path in "${paths[@]}"; do
+            old=$(git ls-tree HEAD "$path" | awk '{print $3}')
+            target=${targets[$path]}
+
+            git -C "$path" fetch --no-tags origin \
+              "$old" "$target" \
+              +refs/heads/main:refs/remotes/origin/main
+            remote_main=$(git -C "$path" rev-parse refs/remotes/origin/main)
+
+            if [[ "$remote_main" != "$target" ]]; then
+              echo "$path remote main moved: expected $target, found $remote_main" >&2
+              exit 1
+            fi
+            if ! git -C "$path" merge-base --is-ancestor "$old" "$target"; then
+              echo "$path target $target does not descend from current pin $old" >&2
+              exit 1
+            fi
+
+            git -C "$path" checkout --detach "$target"
+            git add "$path"
+          done
+
+          git rm .github/workflows/advance-den-1352-reviewed-pins.yml
+          git diff --cached --check
+
+          expected=$(printf '%s\n' \
+            .github/workflows/advance-den-1352-reviewed-pins.yml \
+            apps/canonical-interfaces \
+            apps/canonical-marketing-site.web \
+            apps/canonical-mcp-server.rs \
+            apps/canonical-web-server.rs | sort)
+          actual=$(git diff --cached --name-only | sort)
+          if [[ "$actual" != "$expected" ]]; then
+            echo "unexpected staged paths" >&2
+            diff -u <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") || true
+            exit 1
+          fi
+
+          for path in "${paths[@]}"; do
+            mode=$(git ls-files --stage "$path" | awk '{print $1}')
+            staged=$(git ls-files --stage "$path" | awk '{print $2}')
+            if [[ "$mode" != "160000" || "$staged" != "${targets[$path]}" ]]; then
+              echo "$path is not staged as the exact target gitlink" >&2
+              exit 1
+            fi
+          done
+
+          git diff --cached --submodule=log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Advance reviewed browser and MCP hardening pins"
+          git push origin HEAD:sync/den-1352-reviewed-hardening-pins
