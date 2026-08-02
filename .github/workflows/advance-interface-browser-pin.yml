@@ -1,0 +1,73 @@
+name: Advance reviewed interface browser pin
+
+on:
+  push:
+    branches: [sync/den-1362-interface-browser-pin]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1362-interface-pin-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: true
+      - name: Advance exactly one reviewed descendant gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          path=apps/canonical-interfaces
+          expected_old=90b8783005d03681c8d41121b5c9a3d4a9be1ae0
+          target=3ed810d6b184d4341efc2ae728957acc36732364
+          workflow=.github/workflows/advance-interface-browser-pin.yml
+
+          old=$(git ls-tree HEAD "$path" | awk '{print $3}')
+          if [[ "$old" != "$expected_old" ]]; then
+            echo "$path pin changed: expected $expected_old, found $old" >&2
+            exit 1
+          fi
+
+          git -C "$path" fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          remote_main=$(git -C "$path" rev-parse refs/remotes/origin/main)
+          if [[ "$remote_main" != "$target" ]]; then
+            echo "$path remote main moved: expected $target, found $remote_main" >&2
+            exit 1
+          fi
+          if ! git -C "$path" merge-base --is-ancestor "$old" "$target"; then
+            echo "$target does not descend from current pin $old" >&2
+            exit 1
+          fi
+
+          git -C "$path" checkout --detach "$target"
+          git add "$path"
+          git rm "$workflow"
+
+          mapfile -t changed < <(git diff --cached --name-only | sort)
+          expected=(
+            .github/workflows/advance-interface-browser-pin.yml
+            apps/canonical-interfaces
+          )
+          if [[ "${changed[*]}" != "${expected[*]}" ]]; then
+            printf 'Unexpected staged paths:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+
+          git diff --cached --check
+          git diff --cached --submodule=log
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Pin browser-certified Canonical interfaces'
+          git push origin HEAD:sync/den-1362-interface-browser-pin
