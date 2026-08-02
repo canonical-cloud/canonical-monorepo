@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "release_sha": "488791e252c2ac94de78e1cd4d71165b53c2a2c3",
+  "web": {
+    "image": "ghcr.io/canonical-cloud/canonical-web-server",
+    "digest": "sha256:5e58011c4bf98e9567cf1cf8c901fc71ddb83dc20a4696f17e378e10b050871a"
+  },
+  "revoker": {
+    "image": "ghcr.io/canonical-cloud/canonical-session-revoker",
+    "digest": "sha256:cb675d56785093ef8a944ed5af5bd5d2387eb052d5e914ebe956cefe09361d5b"
+  },
+  "workflow_run_id": "30730300230",
+  "workflow_run_attempt": "1",
+  "published_at": "2026-08-02T03:16:06Z"
+}
