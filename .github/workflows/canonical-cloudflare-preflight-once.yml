@@ -1,0 +1,110 @@
+name: Canonical Cloudflare read-only preflight once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/canonical-cloudflare-preflight-once.yml
+      - scripts/ops/canonical_cloudflare_preflight.py
+      - scripts/ops/test_canonical_cloudflare_preflight.py
+      - scripts/ops/receive_encrypted_canonical_bundle.sh
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: canonical-cloudflare-read-only-preflight-v1
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'canonical-cloud/canonical-monorepo' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: canonical-cloudflare-${{ github.run_id }}-${{ github.run_attempt }}
+      PUBLIC_KEY_PATH: .github/tmp/canonical-cloudflare-${{ github.run_id }}-${{ github.run_attempt }}.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/canonical-cloudflare-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64
+      EVIDENCE_DIR: ops/evidence/canonical-cloudflare-preflight
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate read-only preflight contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = canonical-cloud/canonical-monorepo
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash -n scripts/ops/receive_encrypted_canonical_bundle.sh
+          python3 -m py_compile \
+            scripts/ops/canonical_cloudflare_preflight.py \
+            scripts/ops/test_canonical_cloudflare_preflight.py
+          PYTHONPATH=scripts/ops \
+            python3 scripts/ops/test_canonical_cloudflare_preflight.py -v
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ops/canonical_cloudflare_preflight.py').read_text()
+          forbidden = ('request("POST"', 'request("PUT"', 'request("PATCH"', 'request("DELETE"')
+          if any(item in source for item in forbidden):
+              raise SystemExit('Cloudflare preflight contains a write method')
+          if 'CloudflareClient(token), account_id' not in source:
+              raise SystemExit('live preflight client contract is missing')
+          PY
+
+      - name: Receive one-time encrypted Canonical bundle
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: bash scripts/ops/receive_encrypted_canonical_bundle.sh
+
+      - name: Verify exact account, zone, Worker, routes, and DNS without writes
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          directory = Path('ops/evidence/canonical-cloudflare-preflight')
+          directory.mkdir(parents=True, exist_ok=True)
+          PY
+          python3 scripts/ops/canonical_cloudflare_preflight.py \
+            --json-report "$EVIDENCE_DIR/results.json" \
+            --markdown-report "$EVIDENCE_DIR/README.md"
+          jq -e '
+            .schema_version == 1 and
+            .mode == "read-only-preflight" and
+            .cloudflare_write_performed == false and
+            .token.status == "active" and
+            .account.id_sha256 == "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8" and
+            .zone.name == "canonical.plus" and
+            .zone.account_id_sha256 == .account.id_sha256 and
+            .worker.script == "canonical-plus-auth-edge" and
+            .worker.environment == "default-production" and
+            .r2.required == false and
+            .r2.access_performed == false and
+            (.routes | length) == 3 and
+            (.dns | length) == 2
+          ' "$EVIDENCE_DIR/results.json" >/dev/null
+
+      - name: Upload redacted preflight evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: canonical-cloudflare-preflight-${{ github.run_id }}
+          path: ops/evidence/canonical-cloudflare-preflight
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true
