@@ -8,6 +8,7 @@ on:
       - scripts/ops/canonical_cloudflare_preflight.py
       - scripts/ops/test_canonical_cloudflare_preflight.py
       - scripts/ops/receive_encrypted_canonical_bundle.sh
+      - scripts/ops/test_receive_encrypted_canonical_bundle.py
   workflow_dispatch:
 
 permissions:
@@ -52,9 +53,11 @@ jobs:
           bash -n scripts/ops/receive_encrypted_canonical_bundle.sh
           python3 -m py_compile \
             scripts/ops/canonical_cloudflare_preflight.py \
-            scripts/ops/test_canonical_cloudflare_preflight.py
+            scripts/ops/test_canonical_cloudflare_preflight.py \
+            scripts/ops/test_receive_encrypted_canonical_bundle.py
           PYTHONPATH=scripts/ops \
             python3 scripts/ops/test_canonical_cloudflare_preflight.py -v
+          python3 scripts/ops/test_receive_encrypted_canonical_bundle.py -v
           python3 - <<'PY'
           from pathlib import Path
           source = Path('scripts/ops/canonical_cloudflare_preflight.py').read_text()
