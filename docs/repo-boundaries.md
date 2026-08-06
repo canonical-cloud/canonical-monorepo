@@ -6,51 +6,69 @@ app source directly.
 
 ## Apps
 
-- **`canonical-web-server.rs`** — modular Rust workspace. Its root package is
-  the customer-facing sMASH application server (Supabase Auth/Postgres, Maud
-  HTML, Axum REST/WebSockets, SeaORM, and HTMX); it owns login/session handling,
-  server-rendered `/app` pages, `/api/v1/*`, `/ws`, and the TypeScript IndexedDB
-  sync client. Focused crates under `crates/` provide auth, configuration,
-  session/revocation, and persistence boundaries. The separately deployable
-  `services/canonical-session-revoker` process has no ingress and reconciles
-  durable logout state using its own database role. Supabase Postgres is
-  authoritative; IndexedDB is an optimistic/offline cache with a durable outbox.
-  The Maud shell lets HTMX own the dashboard socket; a PostgreSQL
+- **`canonical-web-server.rs`** — modular Rust workspace for
+  `app.canonical.plus`. Its root package is the customer-facing sMASH
+  application server (Supabase Auth/Postgres, Maud HTML, Axum, SeaORM, and
+  HTMX); it owns login/session handling, server-rendered `/app` pages, and the
+  TypeScript IndexedDB sync client. Focused crates under `crates/` provide auth,
+  configuration, session/revocation, and persistence boundaries. The separately
+  deployable `services/canonical-session-revoker` process has no ingress and
+  reconciles durable logout state using its own database role. Supabase Postgres
+  is authoritative; IndexedDB is an optimistic/offline cache with a durable
+  outbox. The Maud shell lets HTMX own the dashboard socket; a PostgreSQL
   `LISTEN`/`NOTIFY` backplane relays owner-scoped wake-ups across instances.
   Database migrations and process-specific role bootstrap SQL also live here.
   Public.
+- **`canonical-api-server.rs`** — Rust backend for `api.canonical.plus`. It owns
+  versioned quote REST endpoints, authenticated quote-status WebSockets,
+  SeaORM/PostgreSQL persistence orchestration, owner-scoped context loading,
+  and Gemini analysis execution. It consumes generated transport contracts from
+  `canonical-interfaces` and reusable business rules from `canonical-lib`.
+  Browser HTML, login pages, cookies, and HTMX rendering remain outside this
+  repository. Public.
 - **`canonical-marketing-site.web`** — Astro static marketing site (SOC 2 /
   FedRAMP / HIPAA). Builds to `dist/`, which the web server serves. Public.
 - **`canonical-interfaces`** — typed-IO source of truth: JSON Schema for the
   HTTP API + SQL for the compliance store, generated into TS/Rust/Python/Go
-  adapters. The web server and clients consume its generated types. Public.
+  adapters. The web server, API server, and clients consume its generated types.
+  Public.
 - **`canonical-mcp-server.rs`** — Rust MCP server for agent-facing organization,
   repository, operational, and diagnostic tooling. It is reviewed and released
   independently, then pinned here as a submodule. Public.
 
 Each app is its own repo with its own visibility, CI, Dockerfile, `agents.md`,
 and Nix dev shell. The superproject is the all-up integration / GitOps view.
+Reusable packages such as `canonical-lib` and `canonical-clients` are Zed
+package dependencies rather than duplicated gitlinks.
 
 ## Where things live
 
-| Concern                                  | Home                                             |
-| ---------------------------------------- | ------------------------------------------------ |
-| App source                               | the app repo (`apps/<app>`, a submodule)         |
-| Static public marketing pages            | `canonical-marketing-site.web`                   |
-| Customer HTML, REST, WebSockets, sync     | `canonical-web-server.rs` root package           |
-| Shared auth/session/config/store modules  | `canonical-web-server.rs/crates`                 |
-| Durable logout reconciliation             | `canonical-web-server.rs/services/canonical-session-revoker` |
-| Migrations and process-role grants         | `canonical-web-server.rs/deploy/postgres`        |
-| Agent-facing MCP operations               | `canonical-mcp-server.rs`                        |
-| Cross-repo asset and application build   | `build.sh` here                                  |
-| Deployable web/revoker container release | `.github/workflows/release.yml` here             |
-| Submodule pins / branch pins             | `.gitmodules` + gitlinks here                    |
-| Shared automation                        | `scripts/` here                                  |
+| Concern | Home |
+| --- | --- |
+| App source | the app repo (`apps/<app>`, a submodule) |
+| Static public marketing pages | `canonical-marketing-site.web` |
+| Customer HTML, login/session, HTMX, offline sync | `canonical-web-server.rs` root package |
+| Quote REST/WebSockets, persistence, Gemini orchestration | `canonical-api-server.rs` |
+| Shared domain validation and context assembly | `canonical-lib` through Zed |
+| Shared auth/session/config/store modules | `canonical-web-server.rs/crates` |
+| Durable logout reconciliation | `canonical-web-server.rs/services/canonical-session-revoker` |
+| Migrations and process-role grants | `canonical-web-server.rs/deploy/postgres` plus API-owned migrations |
+| Agent-facing MCP operations | `canonical-mcp-server.rs` |
+| Cross-repo asset and application build | `build.sh` here |
+| Deployable web/revoker container release | `.github/workflows/release.yml` here |
+| Submodule pins / branch pins | `.gitmodules` + gitlinks here |
+| Shared source package graph | `.zpkg.toml` + `.zpkg.lock` here |
+| Shared automation | `scripts/` here |
 
 ## Rules
 
 - Change app code inside the submodule, push it there, **then** update the pin
   here with `scripts/pin-submodules.sh`.
+- Keep `app.canonical.plus` and `api.canonical.plus` as separate process,
+  deployment, database-identity, and origin boundaries. The API must not trust
+  client-supplied internal identity headers; Cloudflare or the web tier must
+  strip them, and production auth must verify shared-auth JWTs or sealed
+  introspection results.
 - App repositories may validate their Docker targets but do not publish the
   deployable web or revoker images. Only this superproject's pinned-stack CI
   may write those monorepo-owned GHCR packages.
@@ -63,6 +81,10 @@ and Nix dev shell. The superproject is the all-up integration / GitOps view.
   `canonical-web-server migrate` job. The long-lived `serve` process receives
   only the non-owner, non-`BYPASSRLS` `DATABASE_URL`; its PostgreSQL backplane
   needs session/direct pooling and one connection beyond the SeaORM pool.
+- The API uses a distinct least-privilege PostgreSQL identity and must apply
+  owner/tenant predicates to every quote and `canonical_context` query in the
+  same transaction. WebSocket messages are disposable hints; durable status is
+  recovered from PostgreSQL.
 - The no-ingress `canonical-session-revoker` receives only
   `SESSION_REVOCATION_DATABASE_URL`, which must authenticate as the exact
   non-owner, non-`BYPASSRLS` `canonical_session_revoker` role. The web process
