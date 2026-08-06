@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
-  "release_sha": "a4a5ae279556cded797717acba0a895546de6d8a",
+  "release_sha": "7f6faa0ec0be9fea6708306148dc32b115159915",
   "web": {
     "image": "ghcr.io/canonical-cloud/canonical-web-server",
-    "digest": "sha256:6418f92861bca9bbcf80b1466d360bc7fd1ef9598ae551e70e25b83171fdcf28"
+    "digest": "sha256:d715f24d9c3b1c1fe598690beea0041a545352be8ef7e9df4749c7b176c736f7"
   },
   "revoker": {
     "image": "ghcr.io/canonical-cloud/canonical-session-revoker",
-    "digest": "sha256:2dd9ea7b0a9ce36f4592e76946ce6a33ea6ef3bb9bd30dd9510b16aa84022b4f"
+    "digest": "sha256:38133774760b880dfbcb462dd8319dc97d417f16606046306585d3cbc56c92e5"
   },
-  "workflow_run_id": "31038091758",
+  "workflow_run_id": "31069846935",
   "workflow_run_attempt": "1",
-  "published_at": "2026-08-05T19:10:15Z"
+  "published_at": "2026-08-06T03:57:33Z"
 }
