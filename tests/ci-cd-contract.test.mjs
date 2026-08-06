@@ -263,18 +263,52 @@ test("application release boundary rejects known publication escape hatches", ()
   }
 });
 
-test("release is the monorepo's only privileged publishing workflow", async () => {
+test("release is the only publisher and repository provisioning stays separately bounded", async () => {
   const workflowFiles = (await readdir(workflowsDir)).filter((name) =>
     /\.ya?ml$/.test(name),
   );
-  const privilegedPublishers = [];
+  const privilegedWorkflows = [];
   for (const name of workflowFiles) {
     const workflow = await readFile(new URL(name, workflowsDir), "utf8");
     if (applicationPublisherViolations(workflow).length > 0) {
-      privilegedPublishers.push(name);
+      privilegedWorkflows.push(name);
     }
   }
-  assert.deepEqual(privilegedPublishers, ["release.yml"]);
+  assert.deepEqual(privilegedWorkflows.sort(), [
+    "provision-canonical-e2e.yml",
+    "release.yml",
+  ]);
+
+  const provisioning = await readFile(
+    new URL("provision-canonical-e2e.yml", workflowsDir),
+    "utf8",
+  );
+  assert.match(provisioning, /^on:\n  workflow_dispatch:/m);
+  assert.doesNotMatch(
+    provisioning,
+    /^  (?:pull_request|push|workflow_call|workflow_run):/m,
+  );
+  assert.match(provisioning, /^permissions:\n  contents: read$/m);
+  assert.match(provisioning, /if: inputs\.mode == 'apply'/);
+  assert.match(provisioning, /environment: canonical-repository-provisioning/);
+  assert.match(provisioning, /CANONICAL_REPOSITORY_PROVISIONING_APPROVED/);
+  assert.match(
+    provisioning,
+    /canonical-e2e-repository-provisioning-approved/,
+  );
+  assert.match(
+    provisioning,
+    /Require the protected-environment approval marker[\s\S]*Create Canonical source provisioning token/,
+  );
+  assert.match(provisioning, /permission-administration: write/);
+  assert.match(provisioning, /permission-contents: write/);
+  assert.match(provisioning, /permission-workflows: write/);
+  assert.match(provisioning, /--confirm "\$CONFIRMATION"/);
+  assert.doesNotMatch(
+    provisioning,
+    /(?:packages|attestations|id-token): write|docker\/login-action|docker\/build-push-action|push-to-registry|\bdocker\b[^\r\n]*\b(?:image\s+)?push\b|\b(?:oras|crane|skopeo)\b|\b(?:podman|buildah|nerdctl)\b[^\r\n]*\bpush\b/i,
+  );
+
   assert.match(deployDocs, /sole deployable release authority/);
   assert.match(boundaryDocs, /Only this superproject's pinned-stack CI/);
 });
