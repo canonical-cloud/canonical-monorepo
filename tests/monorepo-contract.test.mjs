@@ -46,8 +46,9 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 4);
+  assert.equal(modules.length, 5);
   assert.deepEqual(paths, [
+    "apps/canonical-api-server.rs",
     "apps/canonical-interfaces",
     "apps/canonical-marketing-site.web",
     "apps/canonical-mcp-server.rs",
@@ -127,14 +128,16 @@ test("env template exposes the runtime knobs and keeps values placeholder-only",
   assert.doesNotMatch(read(".env.example"), /ghp_[A-Za-z0-9]{36}/);
 });
 
-test("full-stack build includes both browser clients before all locked Rust workspace bins", () => {
+test("full-stack build includes both browser clients and both Rust services", () => {
   const build = read("build.sh");
   assert.match(build, /canonical-marketing-site\.web/);
   assert.match(build, /APP_CLIENT="\$WEB_SERVER\/client"/);
+  assert.match(build, /API_SERVER="\$ROOT\/apps\/canonical-api-server\.rs"/);
   assert.match(build, /npm run typecheck/);
   assert.match(build, /npm test/);
   assert.match(build, /npm run build/);
   assert.match(build, /cargo build --locked --release --workspace --bins/);
+  assert.match(build, /cargo build --release --bin canonical-api-server/);
   assert.match(build, /canonical-web-server migrate/);
   assert.match(
     build,
@@ -142,11 +145,29 @@ test("full-stack build includes both browser clients before all locked Rust work
   );
   assert.match(build, /canonical-web-server serve/);
   assert.match(build, /canonical-session-revoker run/);
+  assert.match(build, /canonical-api-server/);
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
 
   const ci = read(".github/workflows/ci.yml");
   assert.match(ci, /cargo test --locked/);
   assert.match(ci, /--workspace --all-targets/);
+  assert.match(ci, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
+});
+
+test("pinned API service preserves REST, WebSocket, SeaORM, and package boundaries", () => {
+  const service = "apps/canonical-api-server.rs";
+  const source = read(`${service}/src/lib.rs`);
+  const manifest = read(`${service}/Cargo.toml`);
+  const zed = read(`${service}/.zpkg.toml`);
+
+  assert.match(source, /\/v1\/quotes/);
+  assert.match(source, /WebSocketUpgrade/);
+  assert.match(source, /CANONICAL_INTERNAL_AUTH_TOKEN/);
+  assert.match(source, /DEFAULT_GEMINI_MODEL/);
+  assert.match(manifest, /^axum\s*=/m);
+  assert.match(manifest, /^sea-orm\s*=/m);
+  assert.match(zed, /canonical-cloud\/canonical-lib/);
+  assert.match(zed, /canonical-cloud\/canonical-interfaces/);
 });
 
 test("architecture docs keep migration, RLS, process, WebSocket, and backplane boundaries explicit", () => {
