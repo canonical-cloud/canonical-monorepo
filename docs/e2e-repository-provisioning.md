@@ -53,9 +53,10 @@ Configure these values in `canonical-cloud/canonical-monorepo`:
 
 - repository variable `CANONICAL_REPO_PROVISIONER_CLIENT_ID`
 - repository secret `CANONICAL_REPO_PROVISIONER_PRIVATE_KEY`
-- protected environment `canonical-repository-provisioning`, preferably with required reviewers and restricted deployment branches
+- protected environment `canonical-repository-provisioning`, with required reviewers and restricted deployment branches
+- environment secret `CANONICAL_REPOSITORY_PROVISIONING_APPROVED` set to `canonical-e2e-repository-provisioning-approved`
 
-The workflow creates short-lived installation tokens independently for each organization and narrows them to read permissions for planning or write permissions for the protected apply job.
+The workflow creates short-lived installation tokens independently for each organization and narrows them to read permissions for planning or write permissions for the protected apply job. The apply job verifies the environment-only approval marker before requesting either write token, so an absent or unconfigured environment fails closed.
 
 ## Operation
 
