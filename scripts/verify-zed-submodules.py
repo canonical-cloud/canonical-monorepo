@@ -12,6 +12,7 @@ import tomllib
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_DEPENDENCIES = {
     "canonical-cloud/canonical-interfaces",
+    "canonical-cloud/canonical-lib",
     "canonical-cloud/canonical-clients",
 }
 FORBIDDEN_SUFFIXES = ("-cli", "-infra")
