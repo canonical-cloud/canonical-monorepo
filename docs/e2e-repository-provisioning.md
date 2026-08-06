@@ -6,7 +6,7 @@ The repository matrix is declared in `provisioning/canonical-e2e-repositories.js
 
 ## Repository layout
 
-The source organization receives one public orchestrator:
+The source organization receives one private orchestrator:
 
 - `canonical-cloud/canonical-e2e`
 
