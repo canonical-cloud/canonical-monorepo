@@ -160,8 +160,8 @@ def validate_manifest(manifest: dict[str, Any]) -> list[str]:
             errors.append("the source-org repository must be canonical-e2e")
         if source.get("kind") != "orchestrator":
             errors.append("canonical-e2e must be an orchestrator")
-        if source.get("visibility") != "public":
-            errors.append("canonical-e2e must be public")
+        if source.get("visibility") != "private":
+            errors.append("canonical-e2e must be private")
         if not source.get("zed_package") or not source.get("auto_init"):
             errors.append("canonical-e2e must be initialized as a Zed package")
 
