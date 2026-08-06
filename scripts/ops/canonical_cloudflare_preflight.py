@@ -88,6 +88,10 @@ class CloudflareClient:
         raise AssertionError("unreachable")
 
 
+def identifier_hash(value: Any) -> str | None:
+    return hashlib.sha256(str(value).encode()).hexdigest() if value else None
+
+
 def safe_errors(value: Any) -> str:
     if not isinstance(value, list):
         return "no structured error details"
@@ -136,7 +140,7 @@ def require_list(value: Any, label: str) -> list[Any]:
 def dns_summary(record: dict[str, Any]) -> dict[str, Any]:
     content = str(record.get("content", ""))
     return {
-        "id": record.get("id"),
+        "id_sha256": identifier_hash(record.get("id")),
         "name": record.get("name"),
         "type": record.get("type"),
         "proxied": record.get("proxied"),
@@ -206,7 +210,7 @@ def run_preflight(client: Client, account_id: str) -> dict[str, Any]:
             {
                 "pattern": pattern,
                 "exists": bool(matches),
-                "id": matches[0].get("id") if matches else None,
+                "id_sha256": identifier_hash(matches[0].get("id")) if matches else None,
                 "script": matches[0].get("script") if matches else None,
             }
         )
@@ -237,6 +241,7 @@ def run_preflight(client: Client, account_id: str) -> dict[str, Any]:
     blockers.append("origin health and TLS have not been certified by this read-only inventory")
     blockers.append("DNS origin targets remain redacted and must be matched to reviewed origin evidence before write")
 
+    worker_metadata = matching_scripts[0] if worker_exists else {}
     return {
         "schema_version": 1,
         "mode": "read-only-preflight",
@@ -248,22 +253,27 @@ def run_preflight(client: Client, account_id: str) -> dict[str, Any]:
         },
         "token": {
             "status": token.get("status"),
-            "id": token.get("id"),
+            "id_sha256": identifier_hash(token.get("id")),
             "expires_on": token.get("expires_on"),
         },
-        "account": {"id": account.get("id"), "name": account.get("name"), "type": account.get("type")},
+        "account": {
+            "id_sha256": identifier_hash(account.get("id")),
+            "name": account.get("name"),
+            "type": account.get("type"),
+        },
         "zone": {
-            "id": zone_id,
+            "id_sha256": identifier_hash(zone_id),
             "name": zone.get("name"),
             "status": zone.get("status"),
             "type": zone.get("type"),
-            "account_id": (zone.get("account") or {}).get("id"),
+            "account_id_sha256": identifier_hash((zone.get("account") or {}).get("id")),
         },
         "worker": {
             "script": EXPECTED_WORKER_SCRIPT,
             "environment": EXPECTED_WORKER_ENVIRONMENT,
             "exists": worker_exists,
-            "metadata": matching_scripts[0] if worker_exists else None,
+            "created_on": worker_metadata.get("created_on"),
+            "modified_on": worker_metadata.get("modified_on"),
         },
         "routes": route_results,
         "dns": dns_results,
@@ -278,7 +288,7 @@ def markdown_report(report: dict[str, Any]) -> str:
         "# Canonical Plus Cloudflare read-only preflight",
         "",
         f"- Token status: `{report['token']['status']}`",
-        f"- Account verified: `{report['account']['id']}`",
+        f"- Reviewed account hash verified: `{report['account']['id_sha256']}`",
         f"- Zone verified: `{report['zone']['name']}` (`{report['zone']['status']}`)",
         f"- Worker: `{worker['script']}` in `{worker['environment']}` — "
         + ("present" if worker["exists"] else "missing"),
