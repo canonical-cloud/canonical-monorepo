@@ -7,6 +7,11 @@ const release = await readFile(
   new URL("release.yml", workflowsDir),
   "utf8",
 );
+const cloudflarePreflightFile = "canonical-cloudflare-preflight-once.yml";
+const cloudflarePreflight = await readFile(
+  new URL(cloudflarePreflightFile, workflowsDir),
+  "utf8",
+);
 const deployDocs = await readFile(
   new URL("../docs/deploy.md", import.meta.url),
   "utf8",
@@ -119,6 +124,42 @@ function applicationWorkflowViolations(workflow) {
     violations.push("top-level permissions are not exactly contents: read");
   }
   return violations;
+}
+
+function assertConstrainedCloudflareInventoryWorkflow(workflow) {
+  const executable = executableWorkflowText(workflow);
+  assert.ok(
+    hasReadOnlyTopLevelPermissions(workflow),
+    "the inventory workflow must remain read-only by default",
+  );
+  assert.deepEqual(
+    applicationPublisherViolations(workflow),
+    ["contents write permission"],
+    "the inventory workflow may write only its one-time encrypted handoff files",
+  );
+  assert.match(
+    executable,
+    /github\.event_name != 'pull_request'[\s\S]*github\.repository == 'canonical-cloud\/canonical-monorepo'[\s\S]*github\.ref == 'refs\/heads\/main'/,
+  );
+  assert.match(
+    executable,
+    /preflight:[\s\S]*permissions:\s*\n\s+actions: read\s*\n\s+contents: write/,
+  );
+  assert.equal(
+    (executable.match(/\$\{\{\s*github\.token\s*\}\}/g) ?? []).length,
+    1,
+    "the temporary receiver may use the run token exactly once",
+  );
+  assert.match(
+    executable,
+    /GITHUB_TOKEN_VALUE: \$\{\{ github\.token \}\}[\s\S]*receive_encrypted_canonical_bundle\.sh/,
+  );
+  assert.match(executable, /canonical_cloudflare_preflight\.py/);
+  assert.doesNotMatch(
+    executable,
+    /packages\s*:\s*write|attestations\s*:\s*write|id-token\s*:\s*write/,
+  );
+  assert.doesNotMatch(executable, /\$\{\{\s*secrets(?:\.|\[)/i);
 }
 
 test("container release follows successful main CI and rejects stale commits", () => {
@@ -263,52 +304,24 @@ test("application release boundary rejects known publication escape hatches", ()
   }
 });
 
-test("release is the only publisher and repository provisioning stays separately bounded", async () => {
+test("release remains the only publisher and inventory write access is constrained", async () => {
+  assertConstrainedCloudflareInventoryWorkflow(cloudflarePreflight);
+
   const workflowFiles = (await readdir(workflowsDir)).filter((name) =>
     /\.ya?ml$/.test(name),
   );
-  const privilegedWorkflows = [];
+  const privilegedPublishers = [];
   for (const name of workflowFiles) {
     const workflow = await readFile(new URL(name, workflowsDir), "utf8");
+    if (name === cloudflarePreflightFile) {
+      assertConstrainedCloudflareInventoryWorkflow(workflow);
+      continue;
+    }
     if (applicationPublisherViolations(workflow).length > 0) {
-      privilegedWorkflows.push(name);
+      privilegedPublishers.push(name);
     }
   }
-  assert.deepEqual(privilegedWorkflows.sort(), [
-    "provision-canonical-e2e.yml",
-    "release.yml",
-  ]);
-
-  const provisioning = await readFile(
-    new URL("provision-canonical-e2e.yml", workflowsDir),
-    "utf8",
-  );
-  assert.match(provisioning, /^on:\n  workflow_dispatch:/m);
-  assert.doesNotMatch(
-    provisioning,
-    /^  (?:pull_request|push|workflow_call|workflow_run):/m,
-  );
-  assert.match(provisioning, /^permissions:\n  contents: read$/m);
-  assert.match(provisioning, /if: inputs\.mode == 'apply'/);
-  assert.match(provisioning, /environment: canonical-repository-provisioning/);
-  assert.match(provisioning, /CANONICAL_REPOSITORY_PROVISIONING_APPROVED/);
-  assert.match(
-    provisioning,
-    /canonical-e2e-repository-provisioning-approved/,
-  );
-  assert.match(
-    provisioning,
-    /Require the protected-environment approval marker[\s\S]*Create Canonical source provisioning token/,
-  );
-  assert.match(provisioning, /permission-administration: write/);
-  assert.match(provisioning, /permission-contents: write/);
-  assert.match(provisioning, /permission-workflows: write/);
-  assert.match(provisioning, /--confirm "\$CONFIRMATION"/);
-  assert.doesNotMatch(
-    provisioning,
-    /(?:packages|attestations|id-token): write|docker\/login-action|docker\/build-push-action|push-to-registry|\bdocker\b[^\r\n]*\b(?:image\s+)?push\b|\b(?:oras|crane|skopeo)\b|\b(?:podman|buildah|nerdctl)\b[^\r\n]*\bpush\b/i,
-  );
-
+  assert.deepEqual(privilegedPublishers, ["release.yml"]);
   assert.match(deployDocs, /sole deployable release authority/);
   assert.match(boundaryDocs, /Only this superproject's pinned-stack CI/);
 });
