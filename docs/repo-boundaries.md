@@ -96,6 +96,10 @@ point, and generated `dpm` plan are reviewed.
 | API image publication | API repository release workflow |
 | Kubernetes promotion | `ORESoftware/k8s-cluster` GitOps |
 
+Only this superproject's pinned-stack CI may write the monorepo-owned web and
+revoker GHCR packages. The dedicated API repository owns its separate immutable
+API package; neither application boundary may publish the other's image.
+
 ## Rules
 
 - Change source in the owning repository, merge it there, then update only the
@@ -111,6 +115,9 @@ point, and generated `dpm` plan are reviewed.
   registry digests, never mutable tags.
 - Passing source CI does not authorize production database, DNS, Worker, route,
   secret-store, or Kubernetes writes.
+- Administrative capabilities stay outside both deployed processes. A future
+  admin application requires a separate origin, binary, database identity,
+  MFA-backed actor context, secret-manager scope, and immutable audit path.
 - Keep destructive operations manual and reviewed. Repository helpers remain
   push-free and expose rehearsal/dirty-tree guards.
 - Never remove a submodule checkout with a filesystem deletion command. Use git
