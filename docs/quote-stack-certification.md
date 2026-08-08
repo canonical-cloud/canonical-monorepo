@@ -8,14 +8,17 @@ August 8, 2026.
 | Component | Reviewed source |
 | --- | --- |
 | Browser web boundary | `canonical-web-server.rs@dcb979956a247f35a8470280717d0750109f2320` |
-| Durable quote API | `canonical-api-server.rs@26967bed96b1b48ea846c3fd418018ea40f4b9e1` |
+| Durable quote API | `canonical-api-server.rs@bc244c01e0e33d5b5d4fe858a3c7d59ee97674fe` |
+| Runtime-changing API parent | `canonical-api-server.rs@26967bed96b1b48ea846c3fd418018ea40f4b9e1` |
 | Public quote contracts | the existing monorepo interface gitlink, a reviewed descendant of golden-fixture merge `c4944fcb1a35fae99a76897a0fedf37263fd11ad` |
 | Declarative PostgreSQL tool | `declarative-postgres-migrate.rs@d05a7880987ddaa271fa88b52c787390ef12b899` |
 
 The web pin delegates signed-in quote analysis to the dedicated API while
 retaining origin-side Shared Auth verification, CSRF, and verified-subject
 projection. The API pin contains the dedicated PostgreSQL namespace and
-least-privilege role contract.
+least-privilege role contract. Its only change after the runtime-certified
+parent is the canonical uppercase-`AGENTS.md` pointer; Cargo, Dockerfile,
+application source, analysis policy, and database files are unchanged.
 
 ## PostgreSQL certification
 
@@ -25,7 +28,7 @@ The declarative source SHA-256 is:
 1933121f6db97e53ea6b51ef3dcf63c77c717839a92281086be454874e41da4a
 ```
 
-The exact API source passed:
+The exact runtime source passed:
 
 - Rust formatting, strict Clippy, and all-target/all-feature tests;
 - distroless non-root container build and health smoke;
@@ -38,6 +41,9 @@ The exact API source passed:
 - out-of-band drift detection;
 - destructive-change refusal without explicit consent; and
 - consented remediation followed by an empty final diff.
+
+The final documentation-only API descendant independently reran and passed the
+same Rust and distroless container CI before merge.
 
 Independent test-organization evidence:
 
@@ -56,14 +62,18 @@ isolated certification boundary.
 
 ## Published API image
 
-The API repository published the merged commit as an immutable GHCR image:
+The runtime-changing API parent published an immutable GHCR image:
 
 ```text
-source: canonical-api-server.rs@26967bed96b1b48ea846c3fd418018ea40f4b9e1
+runtime source: canonical-api-server.rs@26967bed96b1b48ea846c3fd418018ea40f4b9e1
+final reviewed source: canonical-api-server.rs@bc244c01e0e33d5b5d4fe858a3c7d59ee97674fe
 image digest: sha256:788f51365a7d97ba0d6368e9c7ab2939d03d7cd2582bd22bd485473b53766e68
 ```
 
-GitOps promotion must use this digest rather than a mutable tag.
+The final source descendant changes only a file outside the release workflow’s
+runtime path filter. No image rebuild was required or triggered. GitOps must
+consume the immutable digest rather than a mutable tag and retain the explicit
+source-to-runtime-parent relationship in its promotion record.
 
 ## Semantic web-pin reconciliation
 
@@ -71,8 +81,8 @@ The prior superproject web pin diverged from current reviewed web `main` by one
 stale uppercase `AGENTS.md` duplication. Its merge base was the previously
 reviewed quote-web pin. Current web `main` contains the functional API cutover
 and the canonical lowercase-instructions hierarchy; advancing to it discards no
-unique application behavior from the old pin. The monorepo also converts its
-own uppercase entrypoint into the same pointer arrangement.
+unique application behavior from the old pin. The API and monorepo use the same
+lowercase authority plus uppercase pointer arrangement.
 
 ## Activation boundary
 
