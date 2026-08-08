@@ -10,7 +10,8 @@ August 8, 2026.
 | Browser web boundary | `canonical-web-server.rs@dcb979956a247f35a8470280717d0750109f2320` |
 | Durable quote API | `canonical-api-server.rs@bc244c01e0e33d5b5d4fe858a3c7d59ee97674fe` |
 | Runtime-changing API parent | `canonical-api-server.rs@26967bed96b1b48ea846c3fd418018ea40f4b9e1` |
-| Public quote contracts | the existing monorepo interface gitlink, a reviewed descendant of golden-fixture merge `c4944fcb1a35fae99a76897a0fedf37263fd11ad` |
+| Public quote contracts | `canonical-interfaces@4c6ca63ca24fa214a1cb1a917ac27f1d5265916a` |
+| Marketing entry point | `canonical-marketing-site.web@fa02c7d43513e2da916102fd04ef4c9b284ad73b` |
 | Declarative PostgreSQL tool | `declarative-postgres-migrate.rs@d05a7880987ddaa271fa88b52c787390ef12b899` |
 
 The web pin delegates signed-in quote analysis to the dedicated API while
@@ -19,6 +20,18 @@ projection. The API pin contains the dedicated PostgreSQL namespace and
 least-privilege role contract. Its only change after the runtime-certified
 parent is the canonical uppercase-`AGENTS.md` pointer; Cargo, Dockerfile,
 application source, analysis policy, and database files are unchanged.
+
+The interface pin is a forward descendant of golden-fixture merge
+`c4944fcb1a35fae99a76897a0fedf37263fd11ad`. It adds the converged quote-v1
+schema and fixtures, generated Dart support, cross-language conformance tests,
+and semantic-merge guards. The previous superproject interface pin diverged
+only because its branch carried a duplicate uppercase instruction file; current
+interface `main` retains the substantive quote contracts and the canonical
+lowercase-authority hierarchy.
+
+The marketing pin is a strict descendant of the prior superproject pin. Its
+only later tree difference is the reviewed uppercase pointer repair; quote CTAs,
+Astro source, browser behavior, and container inputs are unchanged.
 
 ## PostgreSQL certification
 
@@ -81,8 +94,9 @@ The prior superproject web pin diverged from current reviewed web `main` by one
 stale uppercase `AGENTS.md` duplication. Its merge base was the previously
 reviewed quote-web pin. Current web `main` contains the functional API cutover
 and the canonical lowercase-instructions hierarchy; advancing to it discards no
-unique application behavior from the old pin. The API and monorepo use the same
-lowercase authority plus uppercase pointer arrangement.
+unique application behavior from the old pin. API, interfaces, marketing, MCP,
+and the superproject use the same lowercase authority plus uppercase pointer
+arrangement.
 
 ## Activation boundary
 
