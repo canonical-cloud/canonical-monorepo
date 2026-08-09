@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_DEPENDENCIES = {
     "canonical-cloud/canonical-interfaces",
     "canonical-cloud/canonical-clients",
+    "canonical-cloud/canonical-lib",
 }
 FORBIDDEN_SUFFIXES = ("-cli", "-infra")
 
