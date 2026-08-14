@@ -417,15 +417,22 @@ test("canonical agents.md owns command safety while uppercase entrypoints stay p
 
   for (const repository of repositories) {
     const label = repository || ".";
+    const canonicalPath = path.join(root, repository, "agents.md");
+    const pointerPath = path.join(root, repository, "AGENTS.md");
     const canonical = read(path.join(repository, "agents.md"));
-    const pointer = read(path.join(repository, "AGENTS.md"));
 
     assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
     assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
     assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
 
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
+    // Lowercase `agents.md` is the required authority. Some app repositories
+    // intentionally omit the optional uppercase compatibility pointer; Linux
+    // CI must not infer that path from macOS's case-insensitive filesystem.
+    if (!existsSync(pointerPath)) {
+      continue;
+    }
+
+    const pointer = read(path.join(repository, "AGENTS.md"));
     const samePhysicalFile =
       statSync(canonicalPath).dev === statSync(pointerPath).dev &&
       statSync(canonicalPath).ino === statSync(pointerPath).ino;
