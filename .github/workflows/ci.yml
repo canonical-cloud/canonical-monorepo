@@ -36,7 +36,7 @@ jobs:
   integration-build:
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
@@ -62,9 +62,9 @@ jobs:
           --workspace --all-targets
       - name: Rust API contracts
         run: >-
-          cargo test
+          cargo test --locked
           --manifest-path apps/canonical-api-server.rs/Cargo.toml
-          --all-targets
+          --all-targets --all-features
       - name: Build the pinned stack
         run: ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)

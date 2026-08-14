@@ -3,52 +3,35 @@
 Git superproject for the [canonical-cloud](https://github.com/canonical-cloud)
 repositories.
 
-Each application/service repo is tracked as a git **submodule** under `apps/`.
-The superproject pins each submodule to an exact commit, while `.gitmodules`
-sets `branch = main` for every submodule so updates intentionally follow each
-repo's main branch.
-
-Reusable source packages remain separate repositories and are resolved through
-Zed. The current domain path is `canonical-interfaces` → `canonical-lib` → the
-CLI/API/web consumers; `canonical-clients` remains the shared transport layer.
+Deployable and integration-reviewed repositories are git **submodules** below
+`apps/`. The superproject pins every gitlink to an exact commit while
+`.gitmodules` records `branch = main` as update metadata. Reusable source
+packages remain separate Zed dependencies: the domain direction is
+`canonical-interfaces` → `canonical-lib` → API/web/CLI/MCP consumers, with
+`canonical-clients` owning shared transport behavior.
 
 ## Apps
 
-| Submodule | Stack | Repo |
+| Submodule | Stack and responsibility | Repository |
 | --- | --- | --- |
-| `apps/canonical-web-server.rs` | sMASH + TypeScript/IndexedDB | [canonical-web-server.rs](https://github.com/canonical-cloud/canonical-web-server.rs) |
-| `apps/canonical-api-server.rs` | Rust Axum + SeaORM REST/WebSockets | [canonical-api-server.rs](https://github.com/canonical-cloud/canonical-api-server.rs) |
-| `apps/canonical-marketing-site.web` | Astro | [canonical-marketing-site.web](https://github.com/canonical-cloud/canonical-marketing-site.web) |
-| `apps/canonical-interfaces` | JSON Schema / SQL | [canonical-interfaces](https://github.com/canonical-cloud/canonical-interfaces) |
-| `apps/canonical-mcp-server.rs` | Rust MCP server | [canonical-mcp-server.rs](https://github.com/canonical-cloud/canonical-mcp-server.rs) |
+| `apps/canonical-web-server.rs` | Maud/HTMX browser BFF, Shared Auth verification, CSRF, session revocation, IndexedDB sync | `canonical-cloud/canonical-web-server.rs` |
+| `apps/canonical-api-server.rs` | Axum/SeaORM quote REST and WebSockets, PostgreSQL persistence, Gemini analysis | `canonical-cloud/canonical-api-server.rs` |
+| `apps/canonical-marketing-site.web` | Astro public marketing site and authenticated quote CTA | `canonical-cloud/canonical-marketing-site.web` |
+| `apps/canonical-interfaces` | JSON Schema, SQL, generated language contracts, and golden quote fixtures | `canonical-cloud/canonical-interfaces` |
+| `apps/canonical-mcp-server.rs` | Rust MCP operations and diagnostics surface | `canonical-cloud/canonical-mcp-server.rs` |
 
-`canonical-api-server.rs` owns the backend boundary for `api.canonical.plus`:
-versioned quote REST routes, authenticated quote-status WebSockets, SeaORM
-persistence orchestration, and Gemini analysis integration. It does not serve
-browser HTML; `app.canonical.plus` remains the responsibility of
-`canonical-web-server.rs`.
+The public quote journey starts at `https://app.canonical.plus/u/quote`.
+`canonical-web-server.rs` independently verifies the Canonical Shared Auth
+browser session, enforces Origin/CSRF, renders Maud/HTMX pages, and projects only
+the verified subject to the private API. `canonical-api-server.rs` owns durable
+quote state, owner-scoped REST/WebSocket behavior, the
+`canonical_cloud__quote` PostgreSQL namespace, and Gemini orchestration. The
+browser cannot choose an owner, context UUID, model credential, database role,
+or internal service token.
 
-`canonical-mcp-server.rs` is the agent-facing operations and diagnostics surface
-for the organization. It remains a separately reviewed Rust repository and is
-pinned here like every other deployable app.
-
-`canonical-marketing-site.web` is the static public site.
-`canonical-web-server.rs` is a modular Rust workspace. Its customer-facing
-sMASH binary uses Supabase Auth/Postgres, Maud, Axum, SeaORM, and HTMX to serve
-server-rendered application pages and authenticated WebSockets. A separate
-no-ingress `canonical-session-revoker` binary retries durable upstream logout
-work with its own least-privilege database identity. Shared auth, configuration,
-session, and persistence code lives in focused workspace crates rather than
-inside either process. The TypeScript client uses IndexedDB for optimistic/
-offline state and reconciles with authoritative Supabase Postgres through REST.
-The Maud shell gives HTMX ownership of the dashboard WebSocket, while PostgreSQL
-`LISTEN`/`NOTIFY` relays disposable, owner-scoped invalidation hints between
-server instances. `canonical-interfaces` remains the typed-IO source of truth.
-See `docs/repo-boundaries.md`.
-
-The historical `canonical-cloud/canonical.cloud` repository is a read-only
-compatibility mirror. New source, package, release, and deployment work belongs
-in this superproject and its real source repositories.
+`canonical.cloud` is a frozen compatibility mirror. New source, package,
+release, and deployment work belongs in this superproject and its real source
+repositories.
 
 ## Clone
 
@@ -62,18 +45,27 @@ For an existing checkout:
 git submodule update --init --recursive
 ```
 
-## Build the full stack
+## Build the pinned stack
 
 ```sh
-./build.sh            # builds Astro, the HTMX/IndexedDB client, the web/revoker
-                      # workspace, and the canonical API binary
+./build.sh
 ```
 
-To run the result, derive isolated ignored environment files from `.env.example`:
-one for the migration job, one for the customer web process, and one for the
-no-ingress revoker. Never load all three database credentials into one process.
-Apply migrations and bootstrap both runtime roles with the privileged
-migration-only URL:
+This performs locked or lockfile-strict builds for:
+
+1. the Astro marketing site;
+2. the HTMX/IndexedDB browser client;
+3. the web server and isolated session revoker; and
+4. the dedicated quote API.
+
+Run each process with a separate ignored environment derived from the owning
+repository’s `.env.example`. Never load all database identities or secrets into
+one process.
+
+### Web/session data plane
+
+Apply the web/session migration with its privileged one-shot identity, then
+launch the customer web process and no-ingress revoker independently:
 
 ```sh
 set -a; source .env.migration; set +a
@@ -83,31 +75,43 @@ psql "$MIGRATION_DATABASE_URL" \
 psql "$MIGRATION_DATABASE_URL" \
   --file apps/canonical-web-server.rs/deploy/postgres/bootstrap_session_revoker_role.sql
 unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_MAX_CONNECTIONS
-```
 
-Then launch the long-lived processes independently. The web environment has
-only `DATABASE_URL`; the worker environment has only
-`SESSION_REVOCATION_DATABASE_URL` and receives no network ingress:
-
-```sh
 set -a; source .env.web; set +a
 ./apps/canonical-web-server.rs/target/release/canonical-web-server serve
 
-# Separate shell/container/process:
+# Separate no-ingress process:
 set -a; source .env.revoker; set +a
 ./apps/canonical-web-server.rs/target/release/canonical-session-revoker run
 ```
 
-The API is a distinct process and identity. Supply its own `DATABASE_URL`,
-`CANONICAL_INTERNAL_AUTH_TOKEN`, and Gemini configuration before launch:
+### Quote data plane
+
+The API repository owns a separate declarative PostgreSQL contract:
+
+```text
+schema:   canonical_cloud__quote
+migrator: canonical_cloud__quote__migrator
+API:      canonical_cloud__quote__api_rw
+web:      canonical_cloud__quote__web_ro (no direct table surface)
+```
+
+`db/schema.sql` in the API repository is applied with the reviewed
+`declarative-postgres-migrate.rs` (`dpm`) workflow. Bootstrap, desired state,
+and grants remain separate. Production apply must use the exact migration
+identity, a verified backup/restore point, and a reviewed generated plan. The
+long-lived API receives only the non-owner, non-superuser, non-`BYPASSRLS` DML
+URL plus the Canonical internal service token and Gemini configuration:
 
 ```sh
 set -a; source .env.api; set +a
 ./apps/canonical-api-server.rs/target/release/canonical-api-server
 ```
 
-Production requires Supabase session/direct pooling; transaction pooling cannot
-support the dedicated PostgreSQL listener connection.
+The pinned API source was certified on PostgreSQL 17 in its repository and in
+two independent `declarative-migrations-test` lanes covering forward/rollback,
+forced RLS, owner isolation, drift detection, destructive-change gating, row
+preservation, and final shadow convergence. See
+`docs/quote-stack-certification.md`.
 
 ## Update pins
 
@@ -118,22 +122,25 @@ git diff --cached --submodule
 git commit -m "Pin canonical apps to main"
 ```
 
-The script verifies the target branch exists on every submodule remote, refuses
-dirty submodule checkouts, updates every `.gitmodules` `branch` entry,
-fast-forwards each submodule, and stages the resulting gitlink pins. Preview
+The script verifies branch existence, refuses dirty submodule checkouts,
+fast-forwards each source repository, and stages only gitlink changes. Preview
 with `--dry-run`.
 
-After the full pinned-stack CI succeeds on `main`, the release workflow
-publishes separately attested web and no-ingress revoker images to the
-monorepo-owned GHCR packages, tagged with the exact monorepo commit. App
-repositories build and inspect container targets but have no registry-write or
-release-manifest path. Deployment state and digest promotion live in
-`ORESoftware/k8s-cluster`; Argo CD, not GitHub Actions, reconciles the backend.
-See `docs/deploy.md` for the credential and migration boundaries.
+## Release and promotion
+
+The monorepo release workflow remains the release authority for the pinned web
+and revoker images. The dedicated API repository publishes its own immutable
+commit-SHA image and digest after exact-head CI. GitOps must consume immutable
+digests rather than mutable tags. Deployment state and promotion live in
+`ORESoftware/k8s-cluster`; Argo CD, not source CI, reconciles Kubernetes.
+
+Source or image certification does **not** authorize a production database,
+secret-store, Cloudflare, DNS, R2, Supabase, or Kubernetes mutation. Those
+operations require exact target inventory and the later activation gates.
 
 ## Feature branches
 
-Switch the superproject and every app submodule to the same feature branch:
+Switch the superproject and every app checkout to a matching feature branch:
 
 ```sh
 scripts/checkout-feature-branch.sh feature/new-landing
@@ -142,23 +149,19 @@ scripts/checkout-feature-branch.sh feature/new-landing
 ## Audit
 
 ```sh
-scripts/audit-repo-state.sh          # conflict markers, stray secrets, submodule wiring
+scripts/audit-repo-state.sh
+python3 scripts/verify-zed-submodules.py
+node --test tests/*.test.mjs
 ```
-
-## Planning and delivery
-
-See `docs/project-tracking.md` for the Canonical organization convention that
-connects Linear planning, GitHub issues and pull requests, and the organization
-GitHub Project without hard-coding workspace-specific identifiers.
 
 ## Layout
 
 ```text
-apps/                  # git submodules (the app repos)
-.nix/ .envrc shell     # nix dev shell
-scripts/               # pin / checkout / audit helpers (no destructive git)
-tests/                 # node --test superproject contract specs
-docs/                  # repo boundaries, deploy, project tracking
-.github/               # CI + dependabot
-build.sh               # Astro + clients + web/revoker workspace + API build
+apps/                  # exact source gitlinks
+.vendor/.zed/          # ignored materialized Zed dependencies
+scripts/               # guarded pin, checkout, smoke, and audit helpers
+tests/                 # superproject contract tests
+docs/                  # boundaries, deployment, certification
+.github/               # integration CI and release workflows
+build.sh               # complete pinned-stack build
 ```

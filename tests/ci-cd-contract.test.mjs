@@ -12,6 +12,7 @@ const cloudflarePreflight = await readFile(
   new URL(cloudflarePreflightFile, workflowsDir),
   "utf8",
 );
+const e2eProvisioningFile = "provision-canonical-e2e.yml";
 const deployDocs = await readFile(
   new URL("../docs/deploy.md", import.meta.url),
   "utf8",
@@ -162,6 +163,29 @@ function assertConstrainedCloudflareInventoryWorkflow(workflow) {
   assert.doesNotMatch(executable, /\$\{\{\s*secrets(?:\.|\[)/i);
 }
 
+function assertConstrainedE2eProvisioningWorkflow(workflow) {
+  const executable = executableWorkflowText(workflow);
+  assert.ok(
+    hasReadOnlyTopLevelPermissions(workflow),
+    "E2E provisioning must start with a read-only GITHUB_TOKEN",
+  );
+  assert.deepEqual(
+    applicationPublisherViolations(workflow),
+    ["secret-backed credential"],
+    "E2E provisioning may use a secret-backed GitHub App token only for its protected apply job",
+  );
+  assert.match(executable, /^\s*workflow_dispatch:/m);
+  assert.match(executable, /if: inputs\.mode == 'apply'/);
+  assert.match(executable, /environment: canonical-repository-provisioning/);
+  assert.match(
+    executable,
+    /test "\$APPROVAL_MARKER" = "canonical-e2e-repository-provisioning-approved"[\s\S]*permission-administration: write[\s\S]*permission-contents: write[\s\S]*permission-workflows: write/,
+  );
+  assert.doesNotMatch(executable, /packages\s*:\s*write|attestations\s*:\s*write|id-token\s*:\s*write/);
+  assert.doesNotMatch(executable, /docker\/(?:login-action|build-push-action)|\bdocker\b[^\r\n]*\b(?:login|push)\b/i);
+  assert.doesNotMatch(executable, /github\.token/);
+}
+
 test("container release follows successful main CI and rejects stale commits", () => {
   assert.match(release, /workflow_run:\s*\n\s+workflows: \[ci\]/);
   assert.match(release, /workflow_run\.conclusion == 'success'/);
@@ -304,7 +328,7 @@ test("application release boundary rejects known publication escape hatches", ()
   }
 });
 
-test("release remains the only publisher and inventory write access is constrained", async () => {
+test("release remains the sole artifact publisher and provisioning writes are constrained", async () => {
   assertConstrainedCloudflareInventoryWorkflow(cloudflarePreflight);
 
   const workflowFiles = (await readdir(workflowsDir)).filter((name) =>
@@ -315,6 +339,10 @@ test("release remains the only publisher and inventory write access is constrain
     const workflow = await readFile(new URL(name, workflowsDir), "utf8");
     if (name === cloudflarePreflightFile) {
       assertConstrainedCloudflareInventoryWorkflow(workflow);
+      continue;
+    }
+    if (name === e2eProvisioningFile) {
+      assertConstrainedE2eProvisioningWorkflow(workflow);
       continue;
     }
     if (applicationPublisherViolations(workflow).length > 0) {

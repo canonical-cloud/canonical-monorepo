@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Build the canonical.cloud Astro marketing site, the authenticated HTMX /
-# IndexedDB client, and every deployable Rust binary pinned by the superproject.
-# Each app keeps its output in its own submodule; STATIC_DIR points the web
-# process at the Astro dist.
+# Build the canonical.cloud Astro marketing site, authenticated HTMX /
+# IndexedDB client, web/revoker workspace, and dedicated quote API pinned by
+# this superproject. Each app keeps output in its own submodule.
 #
 # Runs against the submodule checkouts under apps/. Ensure they are initialized:
 #   git submodule update --init --recursive
@@ -28,11 +27,11 @@ echo "==> Verifying and building HTMX / IndexedDB application client"
 echo "==> Building Rust workspace binaries (web server + session revoker)"
 (cd "$WEB_SERVER" && cargo build --locked --release --workspace --bins)
 
-echo "==> Building canonical API server"
-(cd "$API_SERVER" && cargo build --release --bin canonical-api-server)
+echo "==> Building dedicated Canonical quote API"
+(cd "$API_SERVER" && cargo build --locked --release --bin canonical-api-server)
 
-echo "==> Done. Derive isolated ignored environments from .env.example, then run:"
-echo "    # one-shot migration environment"
+echo "==> Done. Derive isolated ignored environments from repository templates, then run:"
+echo "    # one-shot web/session migration environment"
 echo "    ./apps/canonical-web-server.rs/target/release/canonical-web-server migrate"
 echo "    # customer web environment (no migration or revoker database URL)"
 echo "    unset MIGRATION_DATABASE_URL MIGRATION_DATABASE_MAX_CONNECTIONS SESSION_REVOCATION_DATABASE_URL SESSION_REVOCATION_DATABASE_MAX_CONNECTIONS"
