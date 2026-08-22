@@ -1,19 +1,19 @@
 {
   "schema_version": 1,
-  "release_sha": "397445b3a72b306dc2298c168f88b21034c3c3dd",
+  "release_sha": "8676f65fc2caa20b00094d650eb10393dd51a39c",
   "web": {
     "image": "ghcr.io/canonical-cloud/canonical-web-server",
-    "digest": "sha256:c1d22df3a62ac69a3b443c43583937218733da474609a445b95bd132d447ee18"
+    "digest": "sha256:58ddb5db49d48efc61658794c498a4c9ec839c9c7d1b5a1937a991ece8bdb5bc"
   },
   "api": {
     "image": "ghcr.io/canonical-cloud/canonical-api-server",
-    "digest": "sha256:08c5179959aa7bf871ff5f9f398121eeaa3ed396ceb666bb1e76a8cad91826ae"
+    "digest": "sha256:ffebc3718baf3512265a8648053e089ec74778808aedd00247ba724388fc59ff"
   },
   "revoker": {
     "image": "ghcr.io/canonical-cloud/canonical-session-revoker",
-    "digest": "sha256:1df3fbbfc082f7e90a09b4e705b7fc73c21c79578ec2bb7227c9e7d040294297"
+    "digest": "sha256:6e6d47504af687ebb98c872f45c6be2c4ab76c48472f635eab35a31eaeb9c98d"
   },
-  "workflow_run_id": "31926082427",
+  "workflow_run_id": "32592722835",
   "workflow_run_attempt": "1",
-  "published_at": "2026-08-16T04:29:14Z"
+  "published_at": "2026-08-22T19:07:34Z"
 }
