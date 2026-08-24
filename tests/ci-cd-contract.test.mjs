@@ -23,6 +23,7 @@ const boundaryDocs = await readFile(
 );
 const allowedReadOnlyReusableWorkflows = new Set([
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+  "ores-otel/.github/.github/workflows/source-policy-lint.yml@34a36017bfa4da0a820f4a82f8d206958296ebbb",
 ]);
 
 const applicationPublisherSignals = [
