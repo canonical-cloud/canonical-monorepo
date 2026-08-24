@@ -66,10 +66,15 @@ else
   fail "missing .env.example with placeholder values"
 fi
 
+# Deny secret-shaped paths by default. The only tracked files allowed under the
+# root env/ directory are its documentation and SOPS ciphertext; `just
+# env-check` independently verifies every ciphertext file's MAC, encryption
+# marker, and recipient redundancy without requiring a decryption key in CI.
 tracked_secret_paths="$(
   git ls-files \
     | grep -E '(^|/)(env/|\.env($|\.)|id_rsa[^/]*$|.*\.(pem|key|p12|pfx|p8)$)' \
-    | grep -v -E '(^|/)\.env\.example$' \
+    | grep -v -E '(^|/)\.env\.(example|sample|template)$' \
+    | grep -v -E '^env/README\.md$|^env/enc/[^/]+\.env\.enc$' \
     || true
 )"
 if [[ -n "$tracked_secret_paths" ]]; then
