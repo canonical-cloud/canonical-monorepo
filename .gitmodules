@@ -2,6 +2,10 @@
 	path = apps/canonical-web-server.rs
 	url = git@github.com:canonical-cloud/canonical-web-server.rs
 	branch = main
+[submodule "apps/canonical-api-server.rs"]
+	path = apps/canonical-api-server.rs
+	url = git@github.com:canonical-cloud/canonical-api-server.rs.git
+	branch = main
 [submodule "apps/canonical-marketing-site.web"]
 	path = apps/canonical-marketing-site.web
 	url = git@github.com:canonical-cloud/canonical-marketing-site.web
@@ -13,4 +17,8 @@
 [submodule "apps/canonical-mcp-server.rs"]
 	path = apps/canonical-mcp-server.rs
 	url = git@github.com:canonical-cloud/canonical-mcp-server.rs.git
+	branch = main
+[submodule "apps/canonical-sidecar.rs"]
+	path = apps/canonical-sidecar.rs
+	url = https://github.com/canonical-cloud/canonical-sidecar.rs.git
 	branch = main
