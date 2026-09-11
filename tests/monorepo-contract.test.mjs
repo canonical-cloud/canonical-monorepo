@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -46,8 +46,9 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 4);
+  assert.equal(modules.length, 5);
   assert.deepEqual(paths, [
+    "apps/canonical-api-server.rs",
     "apps/canonical-interfaces",
     "apps/canonical-marketing-site.web",
     "apps/canonical-mcp-server.rs",
@@ -123,18 +124,19 @@ test("env template exposes the runtime knobs and keeps values placeholder-only",
   assert.equal(env.get("LOGIN_AUTH_MAX_CONCURRENCY"), "16");
   assert.equal(env.get("BEARER_AUTH_MAX_CONCURRENCY"), "32");
   assert.doesNotMatch(env.get("SUPABASE_PUBLISHABLE_KEY"), /service_role|secret/i);
-  // No obvious real secrets in the template.
   assert.doesNotMatch(read(".env.example"), /ghp_[A-Za-z0-9]{36}/);
 });
 
-test("full-stack build includes both browser clients before all locked Rust workspace bins", () => {
+test("full-stack build includes browser clients and both Rust services", () => {
   const build = read("build.sh");
   assert.match(build, /canonical-marketing-site\.web/);
   assert.match(build, /APP_CLIENT="\$WEB_SERVER\/client"/);
+  assert.match(build, /API_SERVER="\$ROOT\/apps\/canonical-api-server\.rs"/);
   assert.match(build, /npm run typecheck/);
   assert.match(build, /npm test/);
   assert.match(build, /npm run build/);
   assert.match(build, /cargo build --locked --release --workspace --bins/);
+  assert.match(build, /cargo build --locked --release --bin canonical-api-server/);
   assert.match(build, /canonical-web-server migrate/);
   assert.match(
     build,
@@ -142,11 +144,67 @@ test("full-stack build includes both browser clients before all locked Rust work
   );
   assert.match(build, /canonical-web-server serve/);
   assert.match(build, /canonical-session-revoker run/);
+  assert.match(build, /canonical-api-server/);
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
 
   const ci = read(".github/workflows/ci.yml");
   assert.match(ci, /cargo test --locked/);
   assert.match(ci, /--workspace --all-targets/);
+  assert.match(ci, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
+  assert.match(ci, /--all-targets --all-features/);
+});
+
+test("pinned API preserves quote, auth, declarative Postgres, and package boundaries", () => {
+  const service = "apps/canonical-api-server.rs";
+  const source = read(`${service}/src/lib.rs`);
+  const persistence = read(`${service}/src/persistence.rs`);
+  const manifest = read(`${service}/Cargo.toml`);
+  const zed = read(`${service}/.zpkg.toml`);
+  const schema = read(`${service}/db/schema.sql`);
+  const namespace = JSON.parse(read(`${service}/db/namespace.json`));
+  const certification = read("docs/quote-stack-certification.md");
+
+  assert.match(source, /\/v1\/quotes/);
+  assert.match(source, /WebSocketUpgrade/);
+  assert.match(source, /CANONICAL_INTERNAL_AUTH_TOKEN/);
+  assert.match(source, /x-canonical-subject/);
+  assert.match(source, /DEFAULT_GEMINI_MODEL/);
+  assert.match(manifest, /^axum\s*=/m);
+  assert.match(manifest, /^sea-orm\s*=/m);
+  assert.match(zed, /canonical-cloud\/canonical-lib/);
+  assert.match(zed, /canonical-cloud\/canonical-interfaces/);
+
+  assert.equal(namespace.namespaceId, "canonical_cloud__quote");
+  assert.equal(namespace.roles.migrator, "canonical_cloud__quote__migrator");
+  assert.equal(namespace.roles.apiRuntime, "canonical_cloud__quote__api_rw");
+  assert.equal(namespace.roles.webRuntime, "canonical_cloud__quote__web_ro");
+  assert.equal(
+    namespace.declarativeMigration.revision,
+    "d05a7880987ddaa271fa88b52c787390ef12b899",
+  );
+  assert.match(schema, /CREATE SCHEMA canonical_cloud__quote/);
+  for (const table of [
+    "canonical_context",
+    "canonical_quote",
+    "canonical_quote_operation",
+    "canonical_quote_event",
+    "canonical_model_attempt",
+  ]) {
+    assert.match(
+      schema,
+      new RegExp(
+        `ALTER TABLE canonical_cloud__quote\\.${table}\\s+FORCE ROW LEVEL SECURITY;`,
+      ),
+      `${table} must keep forced RLS`,
+    );
+  }
+  assert.match(schema, /canonical_context_one_active_per_owner_idx/);
+  assert.match(persistence, /WHERE owner_subject = \$1/);
+  assert.doesNotMatch(persistence, /public\.canonical_/);
+  assert.match(
+    certification,
+    /sha256:788f51365a7d97ba0d6368e9c7ab2939d03d7cd2582bd22bd485473b53766e68/,
+  );
 });
 
 test("architecture docs keep migration, RLS, process, WebSocket, and backplane boundaries explicit", () => {
@@ -156,6 +214,8 @@ test("architecture docs keep migration, RLS, process, WebSocket, and backplane b
 
   assert.match(readme, /canonical-web-server migrate/);
   assert.match(readme, /canonical-session-revoker run/);
+  assert.match(readme, /canonical-api-server/);
+  assert.match(readme, /canonical_cloud__quote/);
   assert.match(deploy, /bootstrap_runtime_role\.sql/);
   assert.match(deploy, /bootstrap_session_revoker_role\.sql/);
   assert.match(deploy, /docker build --target web/);
@@ -165,6 +225,7 @@ test("architecture docs keep migration, RLS, process, WebSocket, and backplane b
   assert.match(deploy, /HTMX-owned WebSocket/);
   assert.match(boundaries, /non-owner, non-`BYPASSRLS`/);
   assert.match(boundaries, /services\/canonical-session-revoker/);
+  assert.match(boundaries, /canonical_cloud__quote__migrator/);
   assert.match(boundaries, /Administrative capabilities stay outside both deployed processes/);
 });
 
@@ -320,8 +381,6 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     assert.doesNotMatch(body, /\bgit\s+push\b/);
   }
 
-  // Scripts that touch git state must offer rehearsal/escape hatches; the
-  // stack smoke is stricter — it must not run git at all.
   for (const script of ["audit-repo-state.sh", "checkout-feature-branch.sh", "pin-submodules.sh"]) {
     assert.match(read(`scripts/${script}`), /--dry-run|--allow-dirty/);
   }
@@ -358,12 +417,32 @@ test("canonical agents.md owns command safety while uppercase entrypoints stay p
 
   for (const repository of repositories) {
     const label = repository || ".";
+    const canonicalPath = path.join(root, repository, "agents.md");
+    const pointerPath = path.join(root, repository, "AGENTS.md");
     const canonical = read(path.join(repository, "agents.md"));
-    const pointer = read(path.join(repository, "AGENTS.md"));
 
     assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
     assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
     assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
+
+    // Lowercase `agents.md` is the required authority. Some app repositories
+    // intentionally omit the optional uppercase compatibility pointer; Linux
+    // CI must not infer that path from macOS's case-insensitive filesystem.
+    if (!existsSync(pointerPath)) {
+      continue;
+    }
+
+    const pointer = read(path.join(repository, "AGENTS.md"));
+    const samePhysicalFile =
+      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
+      statSync(canonicalPath).ino === statSync(pointerPath).ino;
+    if (samePhysicalFile) {
+      // Case-insensitive filesystems cannot materialize both tracked names.
+      // The indexed repository still carries the uppercase pointer; locally,
+      // verify the canonical lowercase policy instead of treating the alias as
+      // independent content.
+      continue;
+    }
 
     assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
     assert.doesNotMatch(
