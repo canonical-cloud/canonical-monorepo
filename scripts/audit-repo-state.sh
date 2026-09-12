@@ -3,6 +3,7 @@ set -euo pipefail
 
 failures=0
 allow_dirty=0
+allow_uninitialized_private=0
 
 fail() {
   echo "FAIL: $*" >&2
@@ -21,8 +22,11 @@ while [[ $# -gt 0 ]]; do
     --allow-dirty)
       allow_dirty=1
       ;;
+    --allow-uninitialized-private)
+      allow_uninitialized_private=1
+      ;;
     -h|--help)
-      echo "Usage: scripts/audit-repo-state.sh [--allow-dirty]"
+      echo "Usage: scripts/audit-repo-state.sh [--allow-dirty] [--allow-uninitialized-private]"
       exit 0
       ;;
     *)
@@ -126,6 +130,14 @@ for i in "${!module_paths[@]}"; do
   module_path="${module_paths[$i]}"
   module_url="$(git config -f .gitmodules --get "submodule.${module_name}.url" || true)"
   module_branch="$(git config -f .gitmodules --get "submodule.${module_name}.branch" || true)"
+  module_private="$(git config -f .gitmodules --get "submodule.${module_name}.private" || true)"
+
+  if [[ -z "$module_private" ]]; then
+    module_private=false
+  elif [[ "$module_private" != "true" && "$module_private" != "false" ]]; then
+    fail "$module_path private metadata must be true or false"
+    module_private=false
+  fi
 
   if [[ -z "$module_url" ]]; then
     fail "$module_path is missing a submodule URL"
@@ -139,29 +151,33 @@ for i in "${!module_paths[@]}"; do
     fail "$module_path submodule branch is '$module_branch', expected 'main'"
   fi
 
-  if [[ -d "$module_path" ]]; then
-    pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
-    if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
-      if [[ -n "$pinned_sha" ]] && ! git -C "$module_path" merge-base --is-ancestor "$pinned_sha" FETCH_HEAD 2>/dev/null; then
-        fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
-      fi
-    else
-      fail "$module_path: could not fetch origin/$module_branch to verify the pin"
-    fi
+  if ! grep -q "\`$module_path\`" README.md; then
+    fail "README.md app list is missing $module_path"
   fi
 
   if [[ ! -d "$module_path" ]]; then
+    if [[ "$module_private" == "true" && "$allow_uninitialized_private" -eq 1 ]]; then
+      warn "$module_path is private and intentionally uninitialized in this CI lane"
+      continue
+    fi
     fail "$module_path is not initialized"
     continue
+  fi
+
+  pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
+  if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
+    if [[ -n "$pinned_sha" ]] && ! git -C "$module_path" merge-base --is-ancestor "$pinned_sha" FETCH_HEAD 2>/dev/null; then
+      fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
+    fi
+  elif [[ "$module_private" == "true" && "$allow_uninitialized_private" -eq 1 ]]; then
+    warn "$module_path is private; origin fetch could not be authenticated in this CI lane"
+  else
+    fail "$module_path: could not fetch origin/$module_branch to verify the pin"
   fi
 
   if [[ -n "$(git -C "$module_path" status --porcelain=v1)" ]]; then
     fail "$module_path has local changes"
     git -C "$module_path" status --short >&2
-  fi
-
-  if ! grep -q "\`$module_path\`" README.md; then
-    fail "README.md app list is missing $module_path"
   fi
 
   is_rust_service=0
