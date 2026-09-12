@@ -157,6 +157,12 @@ Source or image certification does **not** authorize a production database,
 secret-store, Cloudflare, DNS, R2, Supabase, or Kubernetes mutation. Those
 operations require exact target inventory and the later activation gates.
 
+After the full pinned-stack CI succeeds on `main`, the release workflow
+publishes separately attested web and no-ingress revoker images to GHCR, tagged
+with the exact monorepo commit. Deployment state and digest promotion live in
+`ORESoftware/k8s-cluster`; Argo CD, not GitHub Actions, reconciles the backend.
+See `docs/deploy.md` for the credential and migration boundaries.
+
 ## Feature branches
 
 Switch the superproject and every app checkout to a matching feature branch:
