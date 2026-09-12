@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 
 const root = path.resolve(import.meta.dirname, "..");
+const privateSidecar = "apps/canonical-sidecar.rs";
 
 function read(relPath) {
   return readFileSync(path.join(root, relPath), "utf8");
@@ -42,16 +43,17 @@ function parseEnvExample() {
   return env;
 }
 
-test("submodule declarations stay complete, pinned to main, and backed by apps directories", () => {
+test("submodule declarations stay complete, pinned to main, and explicit about private boundaries", () => {
   const modules = parseGitmodules();
   const paths = modules.map((module) => module.path).sort();
 
-  assert.equal(modules.length, 5);
+  assert.equal(modules.length, 6);
   assert.deepEqual(paths, [
     "apps/canonical-api-server.rs",
     "apps/canonical-interfaces",
     "apps/canonical-marketing-site.web",
     "apps/canonical-mcp-server.rs",
+    "apps/canonical-sidecar.rs",
     "apps/canonical-web-server.rs",
   ]);
 
@@ -63,7 +65,11 @@ test("submodule declarations stay complete, pinned to main, and backed by apps d
       `${module.path} url must point at canonical-cloud over SSH`,
     );
     assert.ok(module.path.startsWith("apps/canonical-"));
-    assert.ok(existsSync(path.join(root, module.path)), `${module.path} is initialized`);
+    const expectedPrivate = module.path === privateSidecar ? "true" : "false";
+    assert.equal(module.private ?? "false", expectedPrivate, `${module.path} private metadata drifted`);
+    if (module.private !== "true") {
+      assert.ok(existsSync(path.join(root, module.path)), `${module.path} is initialized`);
+    }
   }
 });
 
@@ -390,6 +396,8 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
   assert.match(audit, /:\(exclude\)target\/\*\*/);
   assert.match(audit, /:\(exclude\)node_modules\/\*\*/);
   assert.match(audit, /:\(exclude\)dist\/\*\*/);
+  assert.match(audit, /--allow-uninitialized-private/);
+  assert.match(audit, /module_private/);
 
   for (const body of [
     read("scripts/pin-submodules.sh"),
@@ -413,7 +421,12 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
 });
 
 test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
-  const repositories = ["", ...parseGitmodules().map((module) => module.path)];
+  const repositories = [
+    "",
+    ...parseGitmodules()
+      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .map((module) => module.path),
+  ];
 
   for (const repository of repositories) {
     const label = repository || ".";

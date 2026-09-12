@@ -12,6 +12,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,19 +22,29 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Use HTTPS for submodule fetch
+      - name: Use HTTPS for public submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
           persist-credentials: false
+      - name: Initialize public integration submodules
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git submodule update --init --recursive -- \
+            apps/canonical-web-server.rs \
+            apps/canonical-api-server.rs \
+            apps/canonical-marketing-site.web \
+            apps/canonical-interfaces \
+            apps/canonical-mcp-server.rs
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
       - run: node --test tests/*.test.mjs
-      - name: audit repo state
-        run: bash scripts/audit-repo-state.sh
+      - name: Audit public stack and private-submodule metadata
+        run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
 
   integration-build:
     needs: test
@@ -40,12 +53,22 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Use HTTPS for submodule fetch
+      - name: Use HTTPS for public submodule fetch
         run: git config --global url."https://github.com/".insteadOf "git@github.com:"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          submodules: recursive
+          submodules: false
           persist-credentials: false
+      - name: Initialize public integration submodules
+        run: |
+          set -euo pipefail
+          git submodule sync --recursive
+          git submodule update --init --recursive -- \
+            apps/canonical-web-server.rs \
+            apps/canonical-api-server.rs \
+            apps/canonical-marketing-site.web \
+            apps/canonical-interfaces \
+            apps/canonical-mcp-server.rs
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
@@ -65,7 +88,44 @@ jobs:
           cargo test --locked
           --manifest-path apps/canonical-api-server.rs/Cargo.toml
           --all-targets --all-features
-      - name: Build the pinned stack
+      - name: Build the pinned public stack
         run: ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)
         run: bash scripts/stack-smoke.sh
+
+  private-sidecar-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: false
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Explain credential boundary when private read access is unavailable
+        if: env.PRIVATE_SUBMODULE_TOKEN == ''
+        run: >-
+          echo 'Private sidecar source was not fetched. Configure the repository secret
+          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN with read-only access to
+          canonical-cloud/canonical-sidecar.rs to enable private pin verification.'
+      - name: Check out private sidecar with repository-scoped read secret
+        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: canonical-cloud/canonical-sidecar.rs
+          ref: main
+          path: apps/canonical-sidecar.rs
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
+      - name: Verify pinned private sidecar is reachable from main
+        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        run: |
+          set -euo pipefail
+          pinned_sha="$(git rev-parse HEAD:apps/canonical-sidecar.rs)"
+          git -C apps/canonical-sidecar.rs cat-file -e "${pinned_sha}^{commit}"
+          git -C apps/canonical-sidecar.rs merge-base --is-ancestor "$pinned_sha" HEAD
+          test "$(git config -f .gitmodules --get submodule.apps/canonical-sidecar.rs.private)" = true
+          echo "private sidecar pin ${pinned_sha} is reachable from canonical-sidecar.rs/main"
