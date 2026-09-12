@@ -19,6 +19,7 @@ packages remain separate Zed dependencies: the domain direction is
 | `apps/canonical-marketing-site.web` | Astro public marketing site and authenticated quote CTA | `canonical-cloud/canonical-marketing-site.web` |
 | `apps/canonical-interfaces` | JSON Schema, SQL, generated language contracts, and golden quote fixtures | `canonical-cloud/canonical-interfaces` |
 | `apps/canonical-mcp-server.rs` | Rust MCP operations and diagnostics surface | `canonical-cloud/canonical-mcp-server.rs` |
+| `apps/canonical-sidecar.rs` | Private Rust/Kubernetes sidecar for loopback operational helpers and generated runtime configuration | `canonical-cloud/canonical-sidecar.rs` (private) |
 
 The public quote journey starts at `https://app.canonical.plus/u/quote`.
 `canonical-web-server.rs` independently verifies the Canonical Shared Auth
@@ -29,21 +30,35 @@ quote state, owner-scoped REST/WebSocket behavior, the
 browser cannot choose an owner, context UUID, model credential, database role,
 or internal service token.
 
+`canonical-sidecar.rs` is intentionally private and is not required to compile
+the public quote stack. Its gitlink still belongs to the reviewed integration
+topology, but unauthenticated and Dependabot CI lanes must not be given a
+cross-repository credential merely to run public-stack tests. Those lanes
+validate its gitlink/configuration statically; a credentialed private-submodule
+lane can fetch and verify the private pin when the repository read secret is
+configured.
+
 `canonical.cloud` is a frozen compatibility mirror. New source, package,
 release, and deployment work belongs in this superproject and its real source
 repositories.
 
 ## Clone
 
+A fully authenticated developer checkout can clone every submodule:
+
 ```sh
 git clone --recurse-submodules git@github.com:canonical-cloud/canonical-monorepo.git
 ```
 
-For an existing checkout:
+For an existing authenticated checkout:
 
 ```sh
 git submodule update --init --recursive
 ```
+
+Without read access to the private sidecar repository, clone the superproject
+first and initialize only the public integration set. CI does this explicitly
+rather than weakening repository visibility or embedding a PAT in `.gitmodules`.
 
 ## Build the pinned stack
 
@@ -57,6 +72,9 @@ This performs locked or lockfile-strict builds for:
 2. the HTMX/IndexedDB browser client;
 3. the web server and isolated session revoker; and
 4. the dedicated quote API.
+
+The private sidecar is independently built and reviewed in its owning
+repository; it is not silently coupled to the public quote-stack build.
 
 Run each process with a separate ignored environment derived from the owning
 repository’s `.env.example`. Never load all database identities or secrets into
@@ -124,7 +142,8 @@ git commit -m "Pin canonical apps to main"
 
 The script verifies branch existence, refuses dirty submodule checkouts,
 fast-forwards each source repository, and stages only gitlink changes. Preview
-with `--dry-run`.
+with `--dry-run`. Updating the private sidecar pin requires normal authenticated
+read access to its repository; do not place a token in a remote URL.
 
 ## Release and promotion
 
@@ -148,11 +167,18 @@ scripts/checkout-feature-branch.sh feature/new-landing
 
 ## Audit
 
+Fully authenticated checkouts should run the strict audit:
+
 ```sh
 scripts/audit-repo-state.sh
 python3 scripts/verify-zed-submodules.py
 node --test tests/*.test.mjs
 ```
+
+CI lanes that intentionally do not receive the private cross-repository
+credential use `scripts/audit-repo-state.sh --allow-uninitialized-private`.
+That exception applies only to submodules explicitly marked `private = true`;
+public or accidentally missing submodules still fail closed.
 
 ## Layout
 
