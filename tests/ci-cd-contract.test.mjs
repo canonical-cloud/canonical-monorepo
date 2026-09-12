@@ -336,7 +336,13 @@ test("application release boundary rejects known publication escape hatches", ()
 });
 
 test("read-only source credentials do not create artifact publication authority", () => {
-  const workflow = `permissions:\n  contents: read\nenv:\n  READ_TOKEN: ${{ secrets.SOURCE_READ_TOKEN }}\n`;
+  const workflow = [
+    "permissions:",
+    "  contents: read",
+    "env:",
+    "  READ_TOKEN: $" + "{{ secrets.SOURCE_READ_TOKEN }}",
+    "",
+  ].join("\n");
   assert.deepEqual(applicationPublisherViolations(workflow), ["secret-backed credential"]);
   assert.deepEqual(artifactPublisherViolations(workflow), []);
 });
