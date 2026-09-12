@@ -120,6 +120,12 @@ function applicationPublisherViolations(workflow) {
   return violations;
 }
 
+function artifactPublisherViolations(workflow) {
+  return applicationPublisherViolations(workflow).filter(
+    (violation) => violation !== "secret-backed credential",
+  );
+}
+
 function applicationWorkflowViolations(workflow) {
   const violations = applicationPublisherViolations(workflow);
   if (!hasReadOnlyTopLevelPermissions(workflow)) {
@@ -329,6 +335,12 @@ test("application release boundary rejects known publication escape hatches", ()
   }
 });
 
+test("read-only source credentials do not create artifact publication authority", () => {
+  const workflow = `permissions:\n  contents: read\nenv:\n  READ_TOKEN: ${{ secrets.SOURCE_READ_TOKEN }}\n`;
+  assert.deepEqual(applicationPublisherViolations(workflow), ["secret-backed credential"]);
+  assert.deepEqual(artifactPublisherViolations(workflow), []);
+});
+
 test("release remains the sole artifact publisher and provisioning writes are constrained", async () => {
   assertConstrainedCloudflareInventoryWorkflow(cloudflarePreflight);
 
@@ -346,7 +358,7 @@ test("release remains the sole artifact publisher and provisioning writes are co
       assertConstrainedE2eProvisioningWorkflow(workflow);
       continue;
     }
-    if (applicationPublisherViolations(workflow).length > 0) {
+    if (artifactPublisherViolations(workflow).length > 0) {
       privilegedPublishers.push(name);
     }
   }
