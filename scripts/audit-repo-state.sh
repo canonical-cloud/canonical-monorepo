@@ -155,7 +155,13 @@ for i in "${!module_paths[@]}"; do
     fail "README.md app list is missing $module_path"
   fi
 
-  if [[ ! -d "$module_path" ]]; then
+  # An uninitialized gitlink can still have an empty directory. `git -C` from
+  # that directory walks upward and resolves the superproject, so directory
+  # existence alone is not sufficient evidence that the submodule is checked
+  # out. Git's status prefix is authoritative: '-' means uninitialized.
+  module_status="$(git submodule status -- "$module_path" 2>/dev/null || true)"
+  module_status_prefix="${module_status:0:1}"
+  if [[ ! -d "$module_path" || "$module_status_prefix" == "-" || -z "$module_status" ]]; then
     if [[ "$module_private" == "true" && "$allow_uninitialized_private" -eq 1 ]]; then
       warn "$module_path is private and intentionally uninitialized in this CI lane"
       continue
