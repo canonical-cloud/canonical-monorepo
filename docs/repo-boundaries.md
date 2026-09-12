@@ -26,6 +26,13 @@ vendors application source.
   generated adapters, SQL contracts, and versioned golden quote fixtures.
 - **`canonical-mcp-server.rs`** — separately reviewed Rust MCP operations and
   diagnostics surface.
+- **`canonical-sidecar.rs`** — private Rust/Kubernetes sidecar for loopback
+  operational helpers and generated runtime configuration. The repository is
+  intentionally private. Its gitlink is part of integration topology, but the
+  public quote-stack build does not depend on sidecar source being materialized.
+  Public/Dependabot CI validates its path, branch, SSH remote, privacy metadata,
+  documentation, and gitlink shape without receiving a cross-repository secret;
+  credentialed lanes may fetch and verify the private pin separately.
 
 Each repository has its own CI, `agents.md`, package metadata, and release or
 validation boundary. The superproject is the all-up integration view.
@@ -91,6 +98,7 @@ point, and generated `dpm` plan are reviewed.
 | Transport clients | `canonical-clients` |
 | Domain validation | `canonical-lib` |
 | Agent operations | `canonical-mcp-server.rs` |
+| Kubernetes sidecar runtime | `canonical-sidecar.rs` |
 | Exact source integration pins | `.gitmodules` and gitlinks here |
 | Web/revoker image publication | monorepo release workflow |
 | API image publication | API repository release workflow |
@@ -98,7 +106,24 @@ point, and generated `dpm` plan are reviewed.
 
 Only this superproject's pinned-stack CI may write the monorepo-owned web and
 revoker GHCR packages. The dedicated API repository owns its separate immutable
-API package; neither application boundary may publish the other's image.
+API package; neither application boundary may publish the other's image. The
+private sidecar has its own source/build boundary; adding its gitlink here does
+not transfer image publication authority to the public quote-stack build.
+
+## Private submodule access boundary
+
+`.gitmodules` marks only `apps/canonical-sidecar.rs` with `private = true`. This
+metadata is a CI/audit contract, not an authentication mechanism. It does not
+contain a credential and must never be replaced by a tokenized clone URL.
+
+- normal authenticated developer audits require the private sidecar to be
+  initialized and its pinned commit to be an ancestor of `origin/main`;
+- public and Dependabot CI may opt into
+  `--allow-uninitialized-private`, which applies only to explicitly private
+  submodules and still validates all public submodules normally;
+- a credentialed private-submodule lane may use a repository secret through the
+  checkout action to verify the private pin without exposing the token;
+- making the sidecar public solely to satisfy CI is not an acceptable fix.
 
 ## Rules
 
@@ -106,7 +131,7 @@ API package; neither application boundary may publish the other's image.
   reviewed gitlink here.
 - Do not commit real `.env*` files. Track placeholder templates only.
 - Browsers never receive database, migration, Gemini, Cloudflare, R2, Supabase
-  service, or internal service credentials.
+  service, sidecar-management, or internal service credentials.
 - Cloudflare may redirect or strip forged headers, but the origin remains the
   authorization authority.
 - REST/PostgreSQL state is authoritative; WebSockets are disposable update
