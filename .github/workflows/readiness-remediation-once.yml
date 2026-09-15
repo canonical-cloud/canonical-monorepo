@@ -66,6 +66,19 @@ jobs:
               raise SystemExit('expected source-policy allowlist revision not found')
           contract.write_text(text.replace(old, new))
 
+      - name: Initialize public integration submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive -- \
+            apps/canonical-web-server.rs \
+            apps/canonical-api-server.rs \
+            apps/canonical-marketing-site.web \
+            apps/canonical-interfaces \
+            apps/canonical-mcp-server.rs
+
       - name: Remove this one-shot workflow before validation
         shell: bash
         run: git rm -- .github/workflows/readiness-remediation-once.yml
