@@ -223,13 +223,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - name: Download sanitized release ledger
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: canonical-release-ledger
           path: ${{ runner.temp }}/canonical-release-ledger
-      - name: Validate and publish ledger branch
+      - name: Validate and stage ledger branch without write credentials
+        id: ledger
         shell: bash
         run: |
           set -euo pipefail
@@ -258,14 +259,24 @@ jobs:
             git switch -C "$branch" "origin/$branch"
           else
             git switch --orphan "$branch"
-            git rm -rf . >/dev/null 2>&1 || true
+            git read-tree --empty
           fi
           mkdir -p canonical
           cp "$result" canonical/latest.json
           git add canonical/latest.json
           if git diff --cached --quiet; then
             echo 'Canonical release ledger is unchanged.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m 'release: publish canonical image digests'
-          git push origin "HEAD:$branch"
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+      - name: Publish verified ledger commit
+        if: steps.ledger.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          git push origin HEAD:automation/canonical-release-digests
