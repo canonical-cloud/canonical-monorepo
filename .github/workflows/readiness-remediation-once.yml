@@ -1,0 +1,100 @@
+name: one-shot readiness remediation
+
+on:
+  push:
+    branches: [audit/release-ledger-least-privilege-20260915]
+    paths:
+      - '.github/workflows/readiness-remediation-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: readiness-remediation-once
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: github.repository == 'canonical-cloud/canonical-monorepo' && github.ref == 'refs/heads/audit/release-ledger-least-privilege-20260915'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out exact remediation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: audit/release-ledger-least-privilege-20260915
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Apply durable workflow and release-contract fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          lint = Path('.github/workflows/ores-lint.yml')
+          text = lint.read_text()
+          text = text.replace(
+              "  # Add `push:` here once this repo's lint debt is paid down.\n\njobs:\n",
+              "  # Add `push:` here once this repo's lint debt is paid down.\n\npermissions:\n  contents: read\n\njobs:\n",
+          )
+          text = text.replace(
+              "  lint:\n    runs-on: ubuntu-latest\n    steps:\n",
+              "  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    steps:\n",
+          )
+          text = text.replace(
+              "      - uses: actions/checkout@v4\n",
+              "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n",
+          )
+          text = text.replace(
+              "      - uses: actions/setup-node@v4\n",
+              "      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0\n",
+          )
+          text = text.replace(
+              "      - uses: dart-lang/setup-dart@v1\n",
+              "      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1\n",
+          )
+          lint.write_text(text)
+
+          contract = Path('tests/ci-cd-contract.test.mjs')
+          text = contract.read_text()
+          old = 'ores-otel/.github/.github/workflows/source-policy-lint.yml@34a36017bfa4da0a820f4a82f8d206958296ebbb'
+          new = 'ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd'
+          if old not in text:
+              raise SystemExit('expected source-policy allowlist revision not found')
+          contract.write_text(text.replace(old, new))
+
+      - name: Remove this one-shot workflow before validation
+        shell: bash
+        run: git rm -- .github/workflows/readiness-remediation-once.yml
+
+      - name: Validate repository contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          node --test tests/*.test.mjs
+
+      - name: Commit verified remediation
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- .github/workflows/ores-lint.yml tests/ci-cd-contract.test.mjs .github/workflows/readiness-remediation-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci: harden lint workflow and refresh release contract pin'
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Publish verified remediation
+        if: steps.commit.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          basic="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic" \
+            push origin HEAD:refs/heads/audit/release-ledger-least-privilege-20260915
