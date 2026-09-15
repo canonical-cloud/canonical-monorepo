@@ -95,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -- .github/workflows/ores-lint.yml tests/ci-cd-contract.test.mjs .github/workflows/readiness-remediation-once.yml
+          git add -- .github/workflows/ores-lint.yml tests/ci-cd-contract.test.mjs
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'ci: harden lint workflow and refresh release contract pin'
