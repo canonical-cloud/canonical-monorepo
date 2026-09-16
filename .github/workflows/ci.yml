@@ -84,10 +84,32 @@ jobs:
           --manifest-path apps/canonical-web-server.rs/Cargo.toml
           --workspace --all-targets
       - name: Rust API contracts
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-api-server.rs/Cargo.toml
-          --all-targets --all-features
+        env:
+          PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PRIVATE_CARGO_TOKEN:-}" ]; then
+            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
+            exit 1
+          fi
+
+          askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
+          cat >"$askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          SH
+          chmod 700 "$askpass"
+
+          GIT_ASKPASS="$askpass" \
+          GIT_TERMINAL_PROMPT=0 \
+          CARGO_NET_GIT_FETCH_WITH_CLI=true \
+            cargo test --locked \
+              --manifest-path apps/canonical-api-server.rs/Cargo.toml \
+              --all-targets --all-features
       - name: Build the pinned public stack
         run: ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)
