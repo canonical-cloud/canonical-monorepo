@@ -104,7 +104,11 @@ function hasReadOnlyTopLevelPermissions(workflow) {
 }
 
 function isAllowedReadOnlyReusableWorkflow(target) {
-  return allowedReadOnlyReusableWorkflows.has(target) || canonicalHierarchyWorkflow.test(target);
+  return (
+    allowedReadOnlyReusableWorkflows.has(target) ||
+    canonicalHierarchyWorkflow.test(target) ||
+    canonicalOrganizationPolicyWorkflow.test(target)
+  );
 }
 
 function outboundReusableWorkflowViolations(workflow) {
@@ -262,6 +266,12 @@ test("application release boundary rejects known publication escape hatches", ()
     [],
     "immutable read-only hierarchy validation must not be treated as publishing",
   );
+  const safeOrganizationPolicy = `${safePreamble}jobs:\n  policy:\n    uses: canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0`;
+  assert.deepEqual(
+    applicationWorkflowViolations(safeOrganizationPolicy),
+    [],
+    "immutable read-only organization policy must not be treated as publishing",
+  );
 
   const fixtures = [
     ["write-all permissions", "permissions: write-all"],
@@ -329,6 +339,10 @@ test("application release boundary rejects known publication escape hatches", ()
     [
       "outbound reusable workflow",
       "jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@main",
+    ],
+    [
+      "outbound reusable workflow",
+      "jobs:\n  policy:\n    uses: canonical-cloud/.github/.github/workflows/reusable-policy.yml@main",
     ],
     ["inbound reusable workflow", "on:\n  workflow_call:"],
   ];
