@@ -22,9 +22,10 @@ const boundaryDocs = await readFile(
   "utf8",
 );
 const allowedReadOnlyReusableWorkflows = new Set([
-  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
 ]);
+const canonicalHierarchyWorkflow =
+  /^canonical-cloud\/canonical\.cloud\/\.github\/workflows\/agents-hierarchy\.yml@[0-9a-f]{40}$/;
 
 const applicationPublisherSignals = [
   ["write-all permissions", /\bpermissions\s*:\s*["']?write-all["']?/i],
@@ -102,12 +103,16 @@ function hasReadOnlyTopLevelPermissions(workflow) {
   return entries.length === 1 && entries[0] === "contents: read";
 }
 
+function isAllowedReadOnlyReusableWorkflow(target) {
+  return allowedReadOnlyReusableWorkflows.has(target) || canonicalHierarchyWorkflow.test(target);
+}
+
 function outboundReusableWorkflowViolations(workflow) {
   const pattern =
     /^\s*uses\s*:\s*["']?([^\s"'#]+\.github\/workflows\/[^\s"'#]+@[^\s"'#]+)["']?\s*(?:#.*)?$/gim;
   return [...workflow.matchAll(pattern)]
     .map((match) => match[1])
-    .filter((target) => !allowedReadOnlyReusableWorkflows.has(target))
+    .filter((target) => !isAllowedReadOnlyReusableWorkflow(target))
     .map(() => "outbound reusable workflow");
 }
 
@@ -251,7 +256,7 @@ test("pinned app workflows cannot publish or declare a competing release", async
 
 test("application release boundary rejects known publication escape hatches", () => {
   const safePreamble = "permissions:\n  contents: read\n";
-  const safeValidationWorkflow = `${safePreamble}jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b`;
+  const safeValidationWorkflow = `${safePreamble}jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c`;
   assert.deepEqual(
     applicationWorkflowViolations(safeValidationWorkflow),
     [],
@@ -320,6 +325,10 @@ test("application release boundary rejects known publication escape hatches", ()
     [
       "outbound reusable workflow",
       "jobs:\n  release:\n    uses: example/publisher/.github/workflows/release.yml@main",
+    ],
+    [
+      "outbound reusable workflow",
+      "jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@main",
     ],
     ["inbound reusable workflow", "on:\n  workflow_call:"],
   ];
