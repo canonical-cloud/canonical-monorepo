@@ -26,6 +26,8 @@ const allowedReadOnlyReusableWorkflows = new Set([
 ]);
 const canonicalHierarchyWorkflow =
   /^canonical-cloud\/canonical\.cloud\/\.github\/workflows\/agents-hierarchy\.yml@[0-9a-f]{40}$/;
+const canonicalOrganizationPolicyWorkflow =
+  /^canonical-cloud\/\.github\/\.github\/workflows\/reusable-policy\.yml@[0-9a-f]{40}$/;
 
 const applicationPublisherSignals = [
   ["write-all permissions", /\bpermissions\s*:\s*["']?write-all["']?/i],
