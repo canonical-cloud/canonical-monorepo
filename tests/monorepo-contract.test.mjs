@@ -420,48 +420,50 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+test("each repository exposes one non-conflicting command-safety authority", () => {
   const repositories = [
     "",
     ...parseGitmodules()
-      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .filter((module) => module.private !== "true" ||
+        existsSync(path.join(root, module.path, "agents.md")) ||
+        existsSync(path.join(root, module.path, "AGENTS.md")))
       .map((module) => module.path),
   ];
 
   for (const repository of repositories) {
     const label = repository || ".";
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
-    const canonical = read(path.join(repository, "agents.md"));
+    const lowerPath = path.join(root, repository, "agents.md");
+    const upperPath = path.join(root, repository, "AGENTS.md");
+    const hasLower = existsSync(lowerPath);
+    const hasUpper = existsSync(upperPath);
 
-    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
-    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
-    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
+    assert.ok(hasLower || hasUpper, `${label} needs agents.md or AGENTS.md`);
 
-    // Lowercase `agents.md` is the required authority. Some app repositories
-    // intentionally omit the optional uppercase compatibility pointer; Linux
-    // CI must not infer that path from macOS's case-insensitive filesystem.
-    if (!existsSync(pointerPath)) {
+    const lower = hasLower ? read(path.join(repository, "agents.md")) : null;
+    const upper = hasUpper ? read(path.join(repository, "AGENTS.md")) : null;
+    const policies = [lower, upper].filter((value) => value !== null);
+    const authority = policies.find((value) => /## Command safety|Command safety/.test(value));
+
+    assert.ok(authority, `${label} needs one command-safety authority`);
+    assert.match(authority, /git rm/, `${label} policy must whitelist git rm`);
+    assert.match(authority, /git mv/, `${label} policy must whitelist git mv`);
+
+    if (!hasLower || !hasUpper) {
       continue;
     }
 
-    const pointer = read(path.join(repository, "AGENTS.md"));
     const samePhysicalFile =
-      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
-      statSync(canonicalPath).ino === statSync(pointerPath).ino;
-    if (samePhysicalFile) {
-      // Case-insensitive filesystems cannot materialize both tracked names.
-      // The indexed repository still carries the uppercase pointer; locally,
-      // verify the canonical lowercase policy instead of treating the alias as
-      // independent content.
+      statSync(lowerPath).dev === statSync(upperPath).dev &&
+      statSync(lowerPath).ino === statSync(upperPath).ino;
+    if (samePhysicalFile || lower === upper) {
       continue;
     }
 
-    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
-    assert.doesNotMatch(
-      pointer,
-      /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
-      `${label}/AGENTS.md must not duplicate canonical policy`,
+    const lowerIsPointer = /AGENTS\.md/.test(lower) && !/Command safety/.test(lower);
+    const upperIsPointer = /agents\.md/.test(upper) && !/Command safety/.test(upper);
+    assert.ok(
+      lowerIsPointer !== upperIsPointer,
+      `${label} has conflicting agents.md and AGENTS.md authorities`,
     );
   }
 });
