@@ -8,7 +8,7 @@ async function workflow() {
   return readFile(workflowUrl, "utf8");
 }
 
-test("private Cargo auth is step-scoped and uses askpass instead of credential URLs", async () => {
+test("private Cargo auth is one step-scoped integration credential", async () => {
   const source = await workflow();
   const secretRef = "${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}";
 
@@ -19,11 +19,22 @@ test("private Cargo auth is step-scoped and uses askpass instead of credential U
   );
   assert.match(
     source,
-    /- name: Rust API contracts[\s\S]*?PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}[\s\S]*?GIT_ASKPASS=/,
-    "private Cargo token must be scoped to the API contract step and consumed through GIT_ASKPASS",
+    /- name: Rust private Cargo contracts[\s\S]*?PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}[\s\S]*?GIT_ASKPASS=/,
+    "private Cargo token must be scoped to the cross-consumer integration step and consumed through GIT_ASKPASS",
   );
   assert.match(source, /CARGO_NET_GIT_FETCH_WITH_CLI=true/);
   assert.match(source, /GIT_TERMINAL_PROMPT=0/);
+  for (const manifest of [
+    "apps/canonical-web-server.rs/Cargo.toml",
+    "apps/canonical-api-server.rs/Cargo.toml",
+    "apps/canonical-mcp-server.rs/Cargo.toml",
+  ]) {
+    assert.match(
+      source,
+      new RegExp(manifest.replaceAll(".", "\\.")),
+      `private integration must exercise ${manifest}`,
+    );
+  }
   assert.doesNotMatch(
     source,
     /https:\/\/[^\s/@]+:[^\s@]+@github\.com\//,
