@@ -154,7 +154,7 @@ test("full-stack build includes browser clients and both Rust services", () => {
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
 
   const ci = read(".github/workflows/ci.yml");
-  assert.match(ci, /cargo test --locked/);
+  assert.match(ci, /cargo(?: \+1\.95\.0)? test --locked/);
   assert.match(ci, /--workspace --all-targets/);
   assert.match(ci, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
   assert.match(ci, /--all-targets --all-features/);
@@ -163,7 +163,7 @@ test("full-stack build includes browser clients and both Rust services", () => {
 test("pinned API preserves quote, auth, declarative Postgres, and package boundaries", () => {
   const service = "apps/canonical-api-server.rs";
   const source = read(`${service}/src/lib.rs`);
-  const persistence = read(`${service}/src/persistence.rs`);
+  const observation = read(`${service}/src/readiness_observation_ingest.rs`);
   const manifest = read(`${service}/Cargo.toml`);
   const zed = read(`${service}/.zpkg.toml`);
   const schema = read(`${service}/db/schema.sql`);
@@ -176,7 +176,11 @@ test("pinned API preserves quote, auth, declarative Postgres, and package bounda
   assert.match(source, /x-canonical-subject/);
   assert.match(source, /DEFAULT_GEMINI_MODEL/);
   assert.match(manifest, /^axum\s*=/m);
-  assert.match(manifest, /^sea-orm\s*=/m);
+  assert.doesNotMatch(manifest, /^sea-orm\s*=/m);
+  assert.match(manifest, /canonical-lib[^\n]*6e833326ec2974912a4b66ebfc65f27b705abcba/);
+  assert.match(manifest, /canonical-orm-core[^\n]*5547c4c2f5c177be83788b3976505a5c942a991b/);
+  assert.match(source, /use canonical_orm_core::quotes as persistence;/);
+  assert.match(source, /use canonical_orm_core::QuoteStore;/);
   assert.match(zed, /canonical-cloud\/canonical-lib/);
   assert.match(zed, /canonical-cloud\/canonical-interfaces/);
 
@@ -205,8 +209,12 @@ test("pinned API preserves quote, auth, declarative Postgres, and package bounda
     );
   }
   assert.match(schema, /canonical_context_one_active_per_owner_idx/);
-  assert.match(persistence, /WHERE owner_subject = \$1/);
-  assert.doesNotMatch(persistence, /public\.canonical_/);
+  assert.equal(namespace.ownership.ddlAuthority, "canonical-cloud/canonical-orm-core");
+  assert.equal(namespace.ownership.runtimeStore, "canonical-cloud/canonical-orm-core::QuoteStore");
+  assert.equal(namespace.readiness.authority, "canonical-cloud/canonical-orm-core/sql/quote-readiness.sql");
+  assert.match(observation, /append_readiness_observation/);
+  assert.doesNotMatch(observation, /pg_advisory_xact_lock|INSERT\s+INTO|UPDATE\s+canonical_cloud__quote|DELETE\s+FROM/i);
+  assert.ok(!existsSync(path.join(root, service, "src/persistence.rs")), "API-local persistence SQL authority must stay deleted");
   assert.match(
     certification,
     /sha256:788f51365a7d97ba0d6368e9c7ab2939d03d7cd2582bd22bd485473b53766e68/,
@@ -420,48 +428,51 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+test("canonical agent policy stays explicit while compatibility entrypoints remain pointers", () => {
   const repositories = [
     "",
     ...parseGitmodules()
-      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .filter((module) =>
+        module.private !== "true" ||
+        existsSync(path.join(root, module.path, "agents.md")) ||
+        existsSync(path.join(root, module.path, "AGENTS.md")),
+      )
       .map((module) => module.path),
   ];
 
   for (const repository of repositories) {
     const label = repository || ".";
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
-    const canonical = read(path.join(repository, "agents.md"));
+    const lowerPath = path.join(root, repository, "agents.md");
+    const upperPath = path.join(root, repository, "AGENTS.md");
+    const hasLower = existsSync(lowerPath);
+    const hasUpper = existsSync(upperPath);
+    assert.ok(hasLower || hasUpper, `${label} must expose an agent policy entrypoint`);
 
-    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
-    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
-    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
+    const canonicalPath = hasLower ? lowerPath : upperPath;
+    const canonicalName = hasLower ? "agents.md" : "AGENTS.md";
+    const canonical = read(path.join(repository, canonicalName));
+    assert.match(canonical, /Command safety/, `${label}/${canonicalName} needs a Command safety section`);
+    assert.match(canonical, /git rm/, `${label}/${canonicalName} must whitelist git rm`);
+    assert.match(canonical, /git mv/, `${label}/${canonicalName} must whitelist git mv`);
 
-    // Lowercase `agents.md` is the required authority. Some app repositories
-    // intentionally omit the optional uppercase compatibility pointer; Linux
-    // CI must not infer that path from macOS's case-insensitive filesystem.
-    if (!existsSync(pointerPath)) {
+    if (!hasLower || !hasUpper) {
+      continue;
+    }
+
+    const samePhysicalFile =
+      statSync(lowerPath).dev === statSync(upperPath).dev &&
+      statSync(lowerPath).ino === statSync(upperPath).ino;
+    if (samePhysicalFile) {
       continue;
     }
 
     const pointer = read(path.join(repository, "AGENTS.md"));
-    const samePhysicalFile =
-      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
-      statSync(canonicalPath).ino === statSync(pointerPath).ino;
-    if (samePhysicalFile) {
-      // Case-insensitive filesystems cannot materialize both tracked names.
-      // The indexed repository still carries the uppercase pointer; locally,
-      // verify the canonical lowercase policy instead of treating the alias as
-      // independent content.
-      continue;
-    }
-
-    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
+    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md when both entrypoints exist`);
     assert.doesNotMatch(
       pointer,
       /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
-      `${label}/AGENTS.md must not duplicate canonical policy`,
+      `${label}/AGENTS.md must not duplicate canonical policy when lowercase authority exists`,
     );
+    assert.ok(existsSync(canonicalPath));
   }
 });

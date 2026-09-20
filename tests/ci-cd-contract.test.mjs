@@ -22,7 +22,7 @@ const boundaryDocs = await readFile(
   "utf8",
 );
 const allowedReadOnlyReusableWorkflows = new Set([
-  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
 ]);
 
@@ -251,7 +251,7 @@ test("pinned app workflows cannot publish or declare a competing release", async
 
 test("application release boundary rejects known publication escape hatches", () => {
   const safePreamble = "permissions:\n  contents: read\n";
-  const safeValidationWorkflow = `${safePreamble}jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b`;
+  const safeValidationWorkflow = `${safePreamble}jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c`;
   assert.deepEqual(
     applicationWorkflowViolations(safeValidationWorkflow),
     [],
