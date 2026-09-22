@@ -178,7 +178,7 @@ test("pinned API preserves quote, auth, declarative Postgres, and package bounda
   assert.match(manifest, /^axum\s*=/m);
   assert.doesNotMatch(manifest, /^sea-orm\s*=/m);
   assert.match(manifest, /canonical-lib[^\n]*6e833326ec2974912a4b66ebfc65f27b705abcba/);
-  assert.match(manifest, /canonical-orm-core[^\n]*5547c4c2f5c177be83788b3976505a5c942a991b/);
+  assert.match(manifest, /canonical-orm-core[^\n]*ad04984b227b0f2bcca1d8dc6ee858bd58a46f94/);
   assert.match(source, /use canonical_orm_core::quotes as persistence;/);
   assert.match(source, /use canonical_orm_core::QuoteStore;/);
   assert.match(zed, /canonical-cloud\/canonical-lib/);
