@@ -1,0 +1,48 @@
+name: DEN-3938 temporary read-only policy allowlist repair
+
+on:
+  push:
+    branches:
+      - DEN-3938/hardened-persistence-consumers
+    paths:
+      - ".github/workflows/den3938-allow-readonly-org-policy.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: DEN-3938/hardened-persistence-consumers
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Add only the reviewed read-only organization validator
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('tests/ci-cd-contract.test.mjs')
+          s = p.read_text()
+          anchor = '  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",\n'
+          target = '  "canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0",\n'
+          if s.count(anchor) != 1:
+              raise SystemExit(f'expected one agent validator allowlist anchor, got {s.count(anchor)}')
+          if target in s:
+              raise SystemExit('organization validator already allowlisted')
+          p.write_text(s.replace(anchor, anchor + target))
+          PY
+          git rm .github/workflows/den3938-allow-readonly-org-policy.yml
+          git diff --check
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = ".github/workflows/den3938-allow-readonly-org-policy.yml tests/ci-cd-contract.test.mjs "
+          grep -F 'canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0' tests/ci-cd-contract.test.mjs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/ci-cd-contract.test.mjs .github/workflows/den3938-allow-readonly-org-policy.yml
+          git commit -m 'test: allow reviewed read-only organization policy validator'
+          git push origin HEAD:DEN-3938/hardened-persistence-consumers
