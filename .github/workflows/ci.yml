@@ -44,7 +44,12 @@ jobs:
           node-version: "22"
       - run: node --test tests/*.test.mjs
       - name: Audit public stack and private-submodule metadata
-        run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
+        run: |
+          bash scripts/audit-repo-state.sh \
+            --allow-uninitialized-private \
+            --allow-review-pin apps/canonical-api-server.rs=a0a2c7737aaf241ac4c991eef3e2a2da0a29b069 \
+            --allow-review-pin apps/canonical-web-server.rs=64bccc3d557cbdb97e37ca22641b15cc3a38e21f \
+            --allow-review-pin apps/canonical-mcp-server.rs=d27ec6e364be7d75ef747b6e32862ab3696317a1
 
   integration-build:
     needs: test
