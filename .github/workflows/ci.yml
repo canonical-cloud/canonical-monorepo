@@ -44,7 +44,12 @@ jobs:
           node-version: "22"
       - run: node --test tests/*.test.mjs
       - name: Audit public stack and private-submodule metadata
-        run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
+        run: |
+          bash scripts/audit-repo-state.sh \
+            --allow-uninitialized-private \
+            --allow-review-pin apps/canonical-api-server.rs=a0a2c7737aaf241ac4c991eef3e2a2da0a29b069 \
+            --allow-review-pin apps/canonical-web-server.rs=64bccc3d557cbdb97e37ca22641b15cc3a38e21f \
+            --allow-review-pin apps/canonical-mcp-server.rs=d27ec6e364be7d75ef747b6e32862ab3696317a1
 
   integration-build:
     needs: test
@@ -73,23 +78,22 @@ jobs:
         with:
           node-version: "22"
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.95.0"
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
         with:
           workspaces: |
             apps/canonical-web-server.rs
             apps/canonical-api-server.rs
-      - name: Rust web modularization contracts
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          --workspace --all-targets
-      - name: Rust API contracts
+            apps/canonical-mcp-server.rs
+      - name: Rust private Cargo contracts
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${PRIVATE_CARGO_TOKEN:-}" ]; then
-            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
+            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; Rust integration tests were not started.'
             exit 1
           fi
 
@@ -104,12 +108,22 @@ jobs:
           SH
           chmod 700 "$askpass"
 
-          GIT_ASKPASS="$askpass" \
-          GIT_TERMINAL_PROMPT=0 \
-          CARGO_NET_GIT_FETCH_WITH_CLI=true \
-            cargo test --locked \
-              --manifest-path apps/canonical-api-server.rs/Cargo.toml \
-              --all-targets --all-features
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+
+          cargo +1.95.0 test --locked \
+            --manifest-path apps/canonical-web-server.rs/Cargo.toml \
+            --workspace --all-targets
+          cargo +1.95.0 test --locked \
+            --manifest-path apps/canonical-api-server.rs/Cargo.toml \
+            --all-targets --all-features
+          cargo +1.95.0 clippy --locked \
+            --manifest-path apps/canonical-mcp-server.rs/Cargo.toml \
+            --all-targets -- -D warnings
+          cargo +1.95.0 test --locked \
+            --manifest-path apps/canonical-mcp-server.rs/Cargo.toml \
+            --all-targets
       - name: Build the pinned public stack
         run: ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)

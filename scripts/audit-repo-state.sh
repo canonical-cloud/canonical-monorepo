@@ -4,6 +4,8 @@ set -euo pipefail
 failures=0
 allow_dirty=0
 allow_uninitialized_private=0
+declare -A allowed_review_pins=()
+declare -A used_review_pins=()
 
 fail() {
   echo "FAIL: $*" >&2
@@ -25,8 +27,23 @@ while [[ $# -gt 0 ]]; do
     --allow-uninitialized-private)
       allow_uninitialized_private=1
       ;;
+    --allow-review-pin)
+      shift
+      review_pin="${1:-}"
+      if [[ ! "$review_pin" =~ ^(apps/[A-Za-z0-9._/-]+)=([0-9a-f]{40})$ ]]; then
+        echo "--allow-review-pin requires apps/<path>=<40-lowercase-hex-sha>" >&2
+        exit 64
+      fi
+      review_path="${BASH_REMATCH[1]}"
+      review_sha="${BASH_REMATCH[2]}"
+      if [[ -n "${allowed_review_pins[$review_path]:-}" ]]; then
+        echo "duplicate --allow-review-pin for $review_path" >&2
+        exit 64
+      fi
+      allowed_review_pins["$review_path"]="$review_sha"
+      ;;
     -h|--help)
-      echo "Usage: scripts/audit-repo-state.sh [--allow-dirty] [--allow-uninitialized-private]"
+      echo "Usage: scripts/audit-repo-state.sh [--allow-dirty] [--allow-uninitialized-private] [--allow-review-pin apps/<path>=<40-lowercase-hex-sha>]..."
       exit 0
       ;;
     *)
@@ -173,7 +190,13 @@ for i in "${!module_paths[@]}"; do
   pinned_sha="$(git -C "$module_path" rev-parse HEAD 2>/dev/null || true)"
   if git -C "$module_path" fetch -q origin "$module_branch" 2>/dev/null; then
     if [[ -n "$pinned_sha" ]] && ! git -C "$module_path" merge-base --is-ancestor "$pinned_sha" FETCH_HEAD 2>/dev/null; then
-      fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
+      expected_review_sha="${allowed_review_pins[$module_path]:-}"
+      if [[ -n "$expected_review_sha" && "$pinned_sha" == "$expected_review_sha" ]]; then
+        used_review_pins["$module_path"]=1
+        warn "$module_path review pin $pinned_sha is explicitly admitted for this audit invocation"
+      else
+        fail "$module_path pin $pinned_sha is not on origin/$module_branch (unpushed or diverged)"
+      fi
     fi
   elif [[ "$module_private" == "true" && "$allow_uninitialized_private" -eq 1 ]]; then
     warn "$module_path is private; origin fetch could not be authenticated in this CI lane"
@@ -223,6 +246,12 @@ for i in "${!module_paths[@]}"; do
   fi
 
   scan_git_repo "$module_path" "$module_path"
+done
+
+for review_path in "${!allowed_review_pins[@]}"; do
+  if [[ "${used_review_pins[$review_path]:-0}" -ne 1 ]]; then
+    fail "review pin exception $review_path=${allowed_review_pins[$review_path]} did not match an initialized off-main gitlink"
+  fi
 done
 
 if [[ ! -f docs/repo-boundaries.md ]]; then
