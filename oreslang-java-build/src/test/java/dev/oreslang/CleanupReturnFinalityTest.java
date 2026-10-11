@@ -229,6 +229,42 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
+    void nestedCallSiteShadowCannotHideRebindingOfPendingReturn() {
+        rejected("""
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  const cleanup = || -> { result = new Box(); };
+                  const alias = cleanup;
+                  try { return result; }
+                  catch (err) { return result; }
+                  finally {
+                    let mut Box result = new Box();
+                    defer alias();
+                  }
+                }
+                """, "defer cannot reassign returned binding 'result'");
+    }
+
+    @Test
+    void namedCallbackKeepsItsOwnShadowedBindingInFinally() {
+        admitted("""
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  const cleanup = || -> {
+                    let mut Box result = new Box();
+                    result = new Box();
+                  };
+                  try { return result; }
+                  catch (err) { return result; }
+                  finally {
+                    let mut Box result = new Box();
+                    defer cleanup();
+                  }
+                }
+                """);
+    }
+
+    @Test
     void deferredArrayMutationPreservesTheOriginalReturnedObject() throws Exception {
         String code = """
                 fnc make(): Array<int> {

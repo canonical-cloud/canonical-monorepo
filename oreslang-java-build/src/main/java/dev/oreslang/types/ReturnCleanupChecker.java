@@ -23,9 +23,11 @@ public final class ReturnCleanupChecker {
     private static final class Binding {
         final String name;
         final Ast.LambdaExpr closure;
-        Binding(String name, Ast.LambdaExpr closure) {
+        final Scope definingScope;
+        Binding(String name, Ast.LambdaExpr closure, Scope definingScope) {
             this.name = name;
             this.closure = closure;
+            this.definingScope = definingScope;
         }
     }
 
@@ -33,9 +35,12 @@ public final class ReturnCleanupChecker {
         final Scope parent;
         final Map<String, Binding> locals = new HashMap<>();
         Scope(Scope parent) { this.parent = parent; }
-        void define(String name) { define(name, null); }
+        void define(String name) { define(name, null, this); }
         void define(String name, Ast.LambdaExpr closure) {
-            locals.put(name, new Binding(name, closure));
+            define(name, closure, this);
+        }
+        void define(String name, Ast.LambdaExpr closure, Scope definingScope) {
+            locals.put(name, new Binding(name, closure, definingScope));
         }
         Binding resolve(String name) {
             Binding local = locals.get(name);
@@ -90,15 +95,19 @@ public final class ReturnCleanupChecker {
             if (stmt instanceof Ast.BindingStmt binding) {
                 expression(binding.initializer(), scope, inDefer, state);
                 Ast.LambdaExpr cleanupClosure = null;
+                Scope definingScope = scope;
                 if (binding.initializer() instanceof Ast.LambdaExpr lambda) {
                     cleanupClosure = lambda;
                 } else if (binding.initializer() instanceof Ast.NameExpr alias) {
                     Binding source = scope.resolve(alias.name());
-                    if (source != null) cleanupClosure = source.closure;
+                    if (source != null) {
+                        cleanupClosure = source.closure;
+                        definingScope = source.definingScope;
+                    }
                 }
-                // Propagate the lexical callback identity across simple aliases.
-                // A deferred call through an alias must not bypass analysis.
-                scope.define(binding.name(), cleanupClosure);
+                // Aliases retain the closure's original lexical capture
+                // environment, not the potentially shadowing call site.
+                scope.define(binding.name(), cleanupClosure, definingScope);
             } else if (stmt instanceof Ast.DestructureStmt destructure) {
                 expression(destructure.initializer(), scope, inDefer, state);
                 for (Ast.DestructureBinding binding : destructure.bindings()) {
@@ -269,7 +278,7 @@ public final class ReturnCleanupChecker {
                 // callback once to avoid recursive-call analysis loops.
                 if (target != null && target.closure != null
                         && state.scannedDeferredCallbacks.add(target)) {
-                    Scope captured = new Scope(scope);
+                    Scope captured = new Scope(target.definingScope);
                     for (Ast.Param param : target.closure.parameters()) {
                         captured.define(param.name());
                     }

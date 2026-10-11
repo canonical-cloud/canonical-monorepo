@@ -14,9 +14,10 @@ jobs:
           persist-credentials: false
       - name: Verify exact production source and identical LLVM fixture
         run: |
-          test "$(git rev-parse HEAD:oreslang-java-build/src/main)" = "95603eceacd921f02222f0189df62eea1c525b84"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/main)" = "bda47f1d7c01553a786d4c73eb3972431685d2b3"
           test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/SharedNativeDeferSourceParityTest.java)" = "af7028d58d8c4fba3bf3e9eef6ab93bf782118b8"
           test "$(git rev-parse HEAD:oreslang-java-build/contracts/v1/semantics/fixtures/native-defer-field-return.ores)" = "d2da4795ff4cdcadb313104e4ee6da4cd43fb2f7"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/CleanupReturnFinalityTest.java)" = "4925e235366c6ec272ce28131a7584aa1c8b6893"
           echo EXACT_GRAAL_SOURCE_AND_SHARED_LLVM_FIXTURE_OK
       - uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
         with:
