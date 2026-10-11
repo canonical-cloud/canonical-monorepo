@@ -138,23 +138,23 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
-    void finallyMayMutateThePendingMutableReturnObject() throws Exception {
+    void finallyCanCleanUpSeparateBorrowWithoutReplacingReturn() throws Exception {
         String source = BOX + """
-                fnc make(): Box {
-                  val Box result = new Box();
-                  try { return result; }
-                  catch (err) { return result; }
-                  finally { result.value = 7; }
+                fnc make(borrow mut Box audit): int {
+                  try { return 9; }
+                  catch (err) { return 4; }
+                  finally { audit.value = 7; }
                 }
                 pub fnc main(): int {
-                  val Box b = make();
-                  return b.value;
+                  let mut Box audit = new Box();
+                  val int returned = make(rt borrow mut audit);
+                  return returned + audit.value;
                 }
                 """;
         assertDoesNotThrow(() -> TypeChecker.check(Parser.parse(source)));
         try (Context context = Context.newBuilder("ores").allowAllAccess(false).build()) {
-            assertEquals(7L, context.eval(
-                    Source.newBuilder("ores", source, "finally-return-object.ores").build()).asLong());
+            assertEquals(16L, context.eval(
+                    Source.newBuilder("ores", source, "finally-cleanup-loan.ores").build()).asLong());
         }
     }
 

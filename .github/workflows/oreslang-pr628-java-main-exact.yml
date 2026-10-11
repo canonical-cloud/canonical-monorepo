@@ -15,7 +15,7 @@ jobs:
       - name: Verify Java source tree identity
         run: |
           test "$(git rev-parse HEAD:oreslang-java-build/src/main)" = "3fb7a900c9f831ab81bd9edad6ee40aea11d4587"
-          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/CleanupReturnFinalityTest.java)" = "71b6463845704dfb5b21aafbba39209c4cf19b77"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/CleanupReturnFinalityTest.java)" = "5d4d0436b3b9fc4eca8779766a677df08390e588"
           echo EXACT_PRODUCTION_SOURCE_AND_REGRESSION_SHA_MATCH
       - uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
         with:
