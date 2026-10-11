@@ -1,0 +1,41 @@
+name: Private source exact-tree harness validation
+on:
+  push:
+    branches: [ci/exact-tree-harness-v1-20261011]
+    paths: [ci-exact-tree-ready-20261011.txt]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify source provenance from declarative manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/exact-tree/verify.py --manifest ci/exact-tree/manifest.json
+      - name: Test verifier rejects tampered SHA and paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import copy, json
+          import sys
+          sys.path.insert(0, "ci/exact-tree")
+          from verify import verify
+          data = json.load(open("ci/exact-tree/manifest.json", encoding="utf-8"))
+          for field, value in (("tree", "0" * 40),
+                               ("mirror_prefix", "../untrusted"),
+                               ("commit", "not-a-sha")):
+              modified = copy.deepcopy(data)
+              modified["sources"][0][field] = value
+              try:
+                  verify(modified)
+              except ValueError:
+                  continue
+              raise SystemExit(f"tampered {field} unexpectedly accepted")
+          PY
