@@ -1,0 +1,88 @@
+{
+  "version": "ores.stack.sdk.conformance/v1",
+  "schema_version": "ores.stack.sdk/v1",
+  "cases": [
+    {
+      "id": "generated_infra_relative_root",
+      "valid": true,
+      "options": {
+        "target": {
+          "kind": "generated_infra",
+          "root": "alpha-infra"
+        }
+      }
+    },
+    {
+      "id": "repository_relative_root",
+      "valid": true,
+      "options": {
+        "target": {
+          "kind": "repository",
+          "root": "alpha-api"
+        }
+      }
+    },
+    {
+      "id": "repository_absolute_root",
+      "valid": true,
+      "options": {
+        "target": {
+          "kind": "repository",
+          "root": "/workspace/alpha-api"
+        }
+      }
+    },
+    {
+      "id": "empty_root",
+      "valid": false,
+      "options": {
+        "target": {
+          "kind": "repository",
+          "root": ""
+        }
+      }
+    },
+    {
+      "id": "unknown_target_kind",
+      "valid": false,
+      "options": {
+        "target": {
+          "kind": "auto",
+          "root": "alpha-infra"
+        }
+      }
+    },
+    {
+      "id": "target_extra_property",
+      "valid": false,
+      "options": {
+        "target": {
+          "kind": "generated_infra",
+          "root": "alpha-infra",
+          "infer": true
+        }
+      }
+    },
+    {
+      "id": "options_extra_property",
+      "valid": false,
+      "options": {
+        "target": {
+          "kind": "repository",
+          "root": "alpha-api"
+        },
+        "shell": "ores-stack dev"
+      }
+    },
+    {
+      "id": "nul_root",
+      "valid": false,
+      "options": {
+        "target": {
+          "kind": "repository",
+          "root": "alpha\u0000api"
+        }
+      }
+    }
+  ]
+}
