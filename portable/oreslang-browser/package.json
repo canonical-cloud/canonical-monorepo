@@ -1,0 +1,14 @@
+{
+  "name": "@oreslang/browser",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./loader": "./src/loader.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
