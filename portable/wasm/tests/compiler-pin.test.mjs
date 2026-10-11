@@ -9,7 +9,7 @@ import {fileURLToPath} from "node:url";
 import {compileOresToWasm} from "../scripts/compile-ores.mjs";
 
 const sha=bytes=>createHash("sha256").update(bytes).digest("hex");
-test("compiler execution uses pinned executable bytes, not a mutable source pathname",async()=>{
+test("staged executable is pinned and original-compiler mutation prevents publication",async()=>{
  const dir=await mkdtemp(join(tmpdir(),"ores-compiler-pin-"));
  try{
   const compiler=join(dir,"compiler.mjs"),source=join(dir,"guest.ores"),output=join(dir,"guest.wasm");
@@ -26,16 +26,15 @@ test("compiler execution uses pinned executable bytes, not a mutable source path
   await writeFile(compiler,code,{mode:0o700});await chmod(compiler,0o700);
   await writeFile(source,"pub fnc main(): int { return 42; }\n");
   const pinned=sha(Buffer.from(code));
-  const record=await compileOresToWasm({
+  // The exact snapshotted compiler executable is run, but mutations of the
+  // caller's original compiler now additionally deny publication. The prior
+  // expectation that this still succeeded would weaken provenance admission.
+  await assert.rejects(compileOresToWasm({
    compiler,compilerSha256:pinned,source,output,environment:"browser"
-  });
-  assert.equal(record.compilerSha256,pinned);
-  assert.equal(record.sourceSha256,sha(Buffer.from("pub fnc main(): int { return 42; }\n")));
+  }),/compiler executable changed during execution/);
   assert.notEqual(sha(await readFile(compiler)),pinned);
-  const metadata=JSON.parse(await readFile(output+".artifact.json","utf8"));
-  assert.equal(metadata.producer.compilerSha256,pinned);
-  const wasm=await readFile(output);
-  assert.equal(new WebAssembly.Instance(new WebAssembly.Module(wasm)).exports.main(),42n);
+  for(const file of [output,output+".artifact.json",output+".provenance.json"])
+   await assert.rejects(readFile(file),{code:"ENOENT"});
  }finally{await rm(dir,{recursive:true,force:true})}
 });
 test("duplicate compiler, output, source or authorization CLI flags are rejected",()=>{
