@@ -1,0 +1,8 @@
+// @ores-route GET / greet
+import module handlers from "./handlers";
+
+define module route as
+  pub fnc greet(String request) -> String {
+    return handlers.greet(request);
+  }
+end

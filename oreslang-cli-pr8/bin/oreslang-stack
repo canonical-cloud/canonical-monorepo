@@ -1,0 +1,269 @@
+#!/usr/bin/env bash
+# Bootstrap only: flags-2-env parsing, launch of Oreslang guest, process exec and tar.
+# All command admission is in src/main.ores; there is NO Rust CLI.
+set -euo pipefail
+
+cli_home="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+flags2env_bin="${FLAGS2ENV_BIN:-flags2env}"
+oreslang_bin="${ORESLANG_BIN:-oreslang}"
+
+if ! command -v "$flags2env_bin" >/dev/null 2>&1; then
+  echo "oreslang-stack: flags2env is required (https://github.com/flags-2-env/flags-2-env)" >&2
+  exit 127
+fi
+if ! command -v "$oreslang_bin" >/dev/null 2>&1; then
+  echo "oreslang-stack: the Oreslang Java/Graal launcher is required (set ORESLANG_BIN)" >&2
+  exit 127
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  cat <<'EOF'
+Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
+       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
+       oreslang-stack deploy [--root DIR] [--target TARGET]
+       oreslang-stack routes [--root DIR]
+       oreslang-stack generate [--kind all|rpc|lambda] [--check] [--root DIR]
+       oreslang-stack check [--root DIR]
+
+Options are parsed by flags-2-env (.cli-flags.toml).
+dev: run an Oreslang project once (watch/reload is not implemented).
+build: Oreslang native generators + compiler checks + source-only bundle.
+routes: emit manifest from Oreslang-native route discovery.
+generate: Oreslang-native RPC/Lambda source generation and drift detection.
+check: validate all generated outputs and check every .ores file with the compiler.
+deploy: always denied until a certified host adapter exists.
+EOF
+  exit 0
+fi
+
+# shell-env emits properly shell-quoted exports, rejects unknown options,
+# and reports structured parse errors with a nonzero exit code.
+# The command token is mandatory and controls the host receipt whitelist.
+# Do not allow inherited ORESLANG_STACK_COMMAND to replace command selection.
+if (( $# == 0 )); then
+  echo "oreslang-stack: expected dev|build|deploy|routes|generate|check" >&2
+  exit 2
+fi
+requested_command="$1"
+case "$requested_command" in
+  dev|build|deploy|routes|generate|check) ;;
+  *) echo "oreslang-stack: unknown command: $requested_command" >&2; exit 2 ;;
+esac
+if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
+  echo "oreslang-stack: invalid flags-2-env arguments" >&2
+  exit 2
+fi
+eval "$exports"
+if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
+  echo "oreslang-stack: flags2env command does not match requested command" >&2
+  exit 2
+fi
+# flags2env shell-env includes the synthetic argv[0] label in the
+# positionals channel. Reject anything beyond that one exact entry.
+if [[ "${ORESLANG_STACK_POSITIONALS:-}" != '["oreslang-stack"]' ]]; then
+  echo "oreslang-stack: unrecognized positional arguments" >&2
+  exit 2
+fi
+# flags2env exposes unknown options in its structured errors channel; the
+# shell-env command itself can succeed while that collection is nonempty.
+if [[ "${ORESLANG_STACK_UNKNOWN_OPTIONS:-[]}" != "[]" ||
+      "${ORESLANG_STACK_PARSE_ERRORS:-[]}" != "[]" ]]; then
+  echo "oreslang-stack: unknown options or flag parsing errors" >&2
+  exit 2
+fi
+export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
+export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
+export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
+
+root="${ORESLANG_STACK_ROOT:-.}"
+entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+
+# A project entrypoint must stay relative to its selected root.
+case "$entry" in
+  ""|/*|..|../*|src/|*//*|*/./*|*/.|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+esac
+# The source bundle contains checked .ores files under src/ only.
+case "$entry" in
+  src/*.ores) ;;
+  *) echo "oreslang-stack: entrypoint must be an .ores file below src/" >&2; exit 2 ;;
+esac
+if [[ ! -d "$root" || -L "$root" ]]; then
+  echo "oreslang-stack: root must be an existing non-symlink directory" >&2
+  exit 2
+fi
+root="$(cd -- "$root" && pwd -P)"
+export ORESLANG_STACK_ROOT="$root"
+if [[ -L "$root/src" || ( -e "$root/src" && ! -d "$root/src" ) || -L "$root/generated" ]]; then
+  echo "oreslang-stack: symlink or invalid source/generated directory" >&2
+  exit 2
+fi
+if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
+  echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
+  exit 2
+fi
+if ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
+  echo "oreslang-stack: entrypoint parent is missing" >&2
+  exit 2
+fi
+case "$entry_parent" in
+  "$root/src"|"$root/src/"*) ;;
+  *) echo "oreslang-stack: entrypoint path escapes project src" >&2; exit 2 ;;
+esac
+if [[ ! -f "$root/$entry" ]]; then
+  echo "oreslang-stack: entrypoint must be a regular file" >&2
+  exit 2
+fi
+
+# Read-only and env permissions are explicitly scoped. No --allow-all.
+# The .ores program emits exactly one validated action; any other output
+# is a failure, even if the host interpreter exits successfully.
+# Compiler/generator guest can read the project. Only commands that actually
+# generate code receive write grants; check/routes/deploy are strictly read-only.
+admission_permissions=(
+  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK"
+  "--allow-read=$root"
+)
+case "$requested_command" in
+  dev|build) admission_permissions+=("--allow-write=$root/src,$root/generated") ;;
+  generate)
+    if [[ "$ORESLANG_STACK_CHECK" != "true" ]]; then
+      admission_permissions+=("--allow-write=$root/src,$root/generated")
+    fi ;;
+esac
+if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
+  echo "oreslang-stack: Oreslang command admission failed" >&2
+  exit 1
+fi
+# Compile all Oreslang units, not merely the application entrypoint.
+# This is an Oreslang compiler invocation, not a substitute source parser.
+compiler_check_all() {
+  local file checked=0 inventory symlinks
+  if [[ ! -d "$root/src" || -L "$root/src" ]]; then
+    echo "oreslang-stack: source tree missing or symlinked" >&2
+    return 1
+  fi
+  if ! symlinks="$(find "$root/src" -type l -print -quit)"; then
+    echo "oreslang-stack: source traversal failed" >&2
+    return 1
+  fi
+  if [[ -n "$symlinks" ]]; then
+    echo "oreslang-stack: source tree contains a symlink: $symlinks" >&2
+    return 1
+  fi
+  inventory="$(mktemp)"
+  if ! find "$root/src" -type f -name '*.ores' -print0 > "$inventory"; then
+    rm -f "$inventory"
+    echo "oreslang-stack: source inventory failed" >&2
+    return 1
+  fi
+  while IFS= read -r -d '' file; do
+    if ! "$oreslang_bin" --check "$file"; then
+      rm -f "$inventory"
+      echo "oreslang-stack: compiler rejected $file" >&2
+      return 1
+    fi
+    checked=$((checked + 1))
+  done < "$inventory"
+  rm -f "$inventory"
+  if (( checked == 0 )); then
+    echo "oreslang-stack: no .ores files to check" >&2
+    return 1
+  fi
+}
+
+case "$action" in
+  ORESLANG_STACK_JSON_v1:*)
+    if [[ "${ORESLANG_STACK_COMMAND:-}" != "routes" ]]; then
+      echo "oreslang-stack: unexpected JSON receipt" >&2
+      exit 1
+    fi
+    printf '%s\n' "${action#ORESLANG_STACK_JSON_v1:}"
+    ;;
+  ORESLANG_STACK_ACTION_v1:generated)
+    [[ "${ORESLANG_STACK_COMMAND:-}" == "generate" ]] || exit 1
+    printf '%s\n' "generated Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
+    ;;
+  ORESLANG_STACK_ACTION_v1:check)
+    [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
+    compiler_check_all
+    printf '%s\n' "all generated adapters and Oreslang sources verified"
+    ;;
+  ORESLANG_STACK_ACTION_v1:dev)
+    compiler_check_all
+    # Only loopback network access is granted by default to dev servers.
+    # Production/adaptor permissions must be explicit and narrower.
+    exec "$oreslang_bin" --allow-read="$root" --allow-net=127.0.0.1,localhost "$root/$entry"
+    ;;
+  ORESLANG_STACK_ACTION_v1:build)
+    if ! compiler_check_all; then
+      echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
+      exit 1
+    fi
+    # Current compiler --build-analysis is NOT a machine-code artifact.
+    # Package only author-owned source, never mislabel it native/deployable.
+    if [[ ! -d "$root/src" || -L "$root/src" ]]; then
+      echo "oreslang-stack: missing or symlinked source directory" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/src" -type l -print -quit)" ]]; then
+      echo "oreslang-stack: symlink inside src refused" >&2
+      exit 1
+    fi
+    if [[ -e "$root/dist" && ( ! -d "$root/dist" || -L "$root/dist" ) ]]; then
+      echo "oreslang-stack: unsafe dist path" >&2
+      exit 1
+    fi
+    mkdir -p -- "$root/dist"
+    artifact="$root/dist/oreslang-stack-source.tar.gz"
+    if [[ -L "$artifact" || ( -e "$artifact" && ! -f "$artifact" ) ]]; then
+      echo "oreslang-stack: source-bundle destination must be a regular file" >&2
+      exit 1
+    fi
+    tmp="$(mktemp "$root/dist/.oreslang-stack.XXXXXXXX")"
+    trap 'rm -f "$tmp"' EXIT
+    if [[ -L "$root/.oreslangc.cfg.toml" ]]; then
+      echo "oreslang-stack: project compiler manifest symlink refused" >&2
+      exit 1
+    fi
+    # Source distribution is allowlisted, not a recursive project tarball.
+    # Only Oreslang source, the project manifest, route inventory and the
+    # runner are packaged. Secrets and .env files are intentionally excluded.
+    if [[ ! -s "$root/generated/route-manifest.json" || -L "$root/generated/route-manifest.json" ]]; then
+      echo "oreslang-stack: generated route manifest missing or symlinked" >&2
+      exit 1
+    fi
+    stage="$(mktemp -d "$root/dist/.oreslang-stage.XXXXXXXX")"
+    file_list=""
+    trap 'rm -rf "$stage"; rm -f "$tmp"; if [[ -n "${file_list:-}" ]]; then rm -f "$file_list"; fi' EXIT
+    mkdir -p "$stage/src" "$stage/generated" "$stage/bin"
+    file_list="$(mktemp)"
+    if ! find "$root/src" -type f -name '*.ores' -print0 > "$file_list"; then
+      rm -f "$file_list"
+      echo "oreslang-stack: cannot inventory Oreslang source for bundling" >&2
+      exit 1
+    fi
+    while IFS= read -r -d '' file; do
+      relative="${file#"$root/"}"
+      mkdir -p "$stage/$(dirname "$relative")"
+      cp "$file" "$stage/$relative"
+    done < "$file_list"
+    rm -f "$file_list"
+    cp "$root/oreslang-stack.toml" "$stage/oreslang-stack.toml"
+    printf '%s\n' "$entry" > "$stage/.oreslang-stack-entry"
+    cp "$root/generated/route-manifest.json" "$stage/generated/route-manifest.json"
+    cp "$cli_home/bin/oreslang-stack-run" "$stage/bin/oreslang-stack-run"
+    # Project-local compiler configuration can contain tokens and private
+    # paths. Never copy it implicitly into a distributable source bundle.
+    tar -czf "$tmp" -C "$stage" .
+    rm -rf "$stage"
+    mv -f -- "$tmp" "$artifact"
+    trap - EXIT
+    printf 'Oreslang checked source bundle: %s\n' "$artifact"
+    printf '%s\n' 'This is NOT a compiled native artifact. Unpack and use bin/oreslang-stack-run with a Java/Graal Oreslang runtime.'
+    ;;
+  *)
+    echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
+    exit 1
+    ;;
+esac

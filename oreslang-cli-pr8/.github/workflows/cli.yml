@@ -1,0 +1,44 @@
+name: Oreslang-native CLI bootstrap contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host-bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Build canonical flags-2-env parser
+        run: |
+          set -euo pipefail
+          git init /tmp/flags-2-env
+          git -C /tmp/flags-2-env remote add origin https://github.com/flags-2-env/flags-2-env.git
+          git -C /tmp/flags-2-env fetch --depth 1 origin 7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9
+          git -C /tmp/flags-2-env checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/flags-2-env rev-parse HEAD)" = "7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9"
+          make -C /tmp/flags-2-env cli
+          echo "/tmp/flags-2-env/build" >> "$GITHUB_PATH"
+      - name: Audit flag schema
+        run: flags2env audit .cli-flags.toml
+      - name: Shell syntax and bridge contracts (mock interpreter only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n bin/oreslang-stack bin/oreslang-stack-run tests/bootstrap-contract.sh tests/native-generator-contract.sh
+          bash tests/bootstrap-contract.sh
+      - name: Assert no Rust CLI remains
+        run: |
+          test ! -e Cargo.toml
+          test ! -e src/lib.rs
+          test ! -e src/main.rs
+          test -s src/main.ores
+      # IMPORTANT: the GitHub token for this repository does not implicitly
+      # grant checkout of the private oreslang-source.java repository.
+      # This CI job does NOT claim to run real Oreslang typechecking.
