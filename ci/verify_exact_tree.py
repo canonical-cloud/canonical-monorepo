@@ -28,7 +28,7 @@ def hex_sha(value, field):
 def safe_rel(value, field):
     if not isinstance(value, str) or not value or len(value) > 512:
         fail(f"{field} is not a nonempty relative Git path")
-    if "\\" in value or value.startswith("/") or any(
+    if "\\" in value or value.startswith("/") or any(ord(ch) < 32 or ord(ch) == 127 for ch in value) or any(
         component in ("", ".", "..") for component in value.split("/")
     ):
         fail(f"{field} contains an unsafe path component")
@@ -62,15 +62,17 @@ def verify(manifest_path, checkout, attestation_path=None):
         fail("too many blob pins")
 
     checkout = checkout.resolve(strict=True)
-    git(checkout, "rev-parse", "--show-toplevel")
+    repository_root = Path(git(checkout, "rev-parse", "--show-toplevel")).resolve(strict=True)
+    if checkout != repository_root:
+        fail("checkout must be the Git repository root")
     tested_commit = git(checkout, "rev-parse", "--verify", "HEAD^{commit}")
     mirrored_tree = git(checkout, "rev-parse", f"HEAD:{mirror}")
     if git(checkout, "cat-file", "-t", mirrored_tree) != "tree":
         fail("mirror path must be a Git tree, not a file or symlink")
     if mirrored_tree != expected_tree:
         fail(f"mirror tree mismatch: got {mirrored_tree}, expected {expected_tree}")
-    if git(checkout, "status", "--porcelain", "--untracked-files=all", "--", mirror):
-        fail("working mirror has dirty or untracked files")
+    if git(checkout, "status", "--porcelain", "--ignored", "--untracked-files=all", "--", mirror):
+        fail("working mirror has dirty, untracked or ignored files")
 
     seen = set()
     checked = []
@@ -85,6 +87,9 @@ def verify(manifest_path, checkout, attestation_path=None):
         actual = git(checkout, "rev-parse", f"HEAD:{mirror}/{path}")
         if git(checkout, "cat-file", "-t", actual) != "blob":
             fail(f"not a regular Git blob: {path}")
+        tree_row = git(checkout, "ls-tree", "-r", "--full-tree", "HEAD", "--", f"{mirror}/{path}")
+        if not (tree_row.startswith(f"100644 blob {actual}" + chr(9)) or tree_row.startswith(f"100755 blob {actual}" + chr(9))):
+            fail(f"pinned path is not a regular file: {path}")
         if actual != expected:
             fail(f"blob mismatch: {path}: {actual} != {expected}")
         checked.append({"path": path, "sha": actual})
