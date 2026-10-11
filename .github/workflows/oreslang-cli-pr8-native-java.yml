@@ -24,7 +24,7 @@ jobs:
           test "$(git rev-parse HEAD:oreslang-cli-pr8)" = "4e0c22571664fa2027c210ce2b2286b1ab57caa5"
           echo "All Java build inputs and CLI source match the pinned upstream Git objects"
       - name: Install GraalVM JDK 25
-        uses: graalvm/setup-graalvm@v1
+        uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
         with:
           java-version: "25"
           version: "25.3"
