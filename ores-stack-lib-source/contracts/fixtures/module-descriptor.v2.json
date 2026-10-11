@@ -1,0 +1,18 @@
+{
+  "contract_version": "ores-stack-module-contract-v1",
+  "semantics_version": "ores-stack.module-semantics/v2",
+  "kind": "rpc",
+  "name": "catalog",
+  "interface": "ores-stack.rpc.v1",
+  "entrypoint": "crate::rpc::Catalog",
+  "policy": {
+    "invocation": "request_response",
+    "concurrency": "concurrent",
+    "cancellation": "deadline",
+    "default_timeout_ms": 5000,
+    "max_concurrency": 32,
+    "idempotent": true,
+    "retry_safe": true
+  },
+  "capabilities": ["clock", "database_read"]
+}

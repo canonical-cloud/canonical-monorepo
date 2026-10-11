@@ -1,0 +1,30 @@
+{
+  "contract_version": "ores-stack-module-contract-v1",
+  "semantics_version": "ores-stack.module-semantics/v3",
+  "kind": "lambda",
+  "name": "events_stream",
+  "interface": "ores-stack.lambda.v1",
+  "entrypoint": "crate::lambda::EventsStream",
+  "policy": {
+    "invocation": "stream",
+    "concurrency": "concurrent",
+    "cancellation": "cooperative",
+    "default_timeout_ms": 30000,
+    "max_concurrency": 64,
+    "idempotent": true,
+    "retry_safe": true
+  },
+  "capabilities": ["clock"],
+  "wire": {
+    "request": {
+      "schema_ref": "#/schemas/events_stream_request",
+      "content_type": "application/json",
+      "codec": "json"
+    },
+    "response": {
+      "schema_ref": "#/schemas/event_chunk",
+      "content_type": "application/msgpack",
+      "codec": "messagepack"
+    }
+  }
+}

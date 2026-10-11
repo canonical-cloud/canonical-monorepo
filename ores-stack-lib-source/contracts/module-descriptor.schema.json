@@ -1,0 +1,271 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ores-stack.dev/contracts/module-descriptor.schema.json",
+  "title": "ORES Stack Module Descriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "kind",
+    "name",
+    "interface",
+    "entrypoint"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "ores-stack-module-contract-v1"
+    },
+    "semantics_version": {
+      "type": ["string", "null"],
+      "enum": [
+        "ores-stack.module-semantics/v2",
+        "ores-stack.module-semantics/v3",
+        null
+      ]
+    },
+    "kind": {
+      "$ref": "#/$defs/module_kind"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_.-]+$"
+    },
+    "interface": {
+      "type": "string",
+      "enum": [
+        "ores-stack.lambda.v1",
+        "ores-stack.http.v1",
+        "ores-stack.rpc.v1",
+        "ores-stack.page.v1",
+        "ores-stack.middleware.v1",
+        "ores-stack.worker.v1"
+      ]
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "policy": {
+      "$ref": "#/$defs/module_policy"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/capability"
+      },
+      "default": []
+    },
+    "wire": {
+      "$ref": "#/$defs/wire_contract"
+    }
+  },
+  "$defs": {
+    "module_kind": {
+      "type": "string",
+      "enum": ["lambda", "http", "rpc", "page", "middleware", "worker"]
+    },
+    "invocation_mode": {
+      "type": "string",
+      "enum": ["request_response", "stream", "event"]
+    },
+    "concurrency_model": {
+      "type": "string",
+      "enum": ["concurrent", "serial", "keyed_serial"]
+    },
+    "cancellation_model": {
+      "type": "string",
+      "enum": ["cooperative", "deadline"]
+    },
+    "payload_codec": {
+      "type": "string",
+      "enum": ["json", "messagepack", "protobuf", "utf8", "bytes"]
+    },
+    "payload_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content_type", "codec"],
+      "properties": {
+        "schema_ref": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "codec": {
+          "$ref": "#/$defs/payload_codec"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "codec": {
+                "enum": ["json", "messagepack", "protobuf"]
+              }
+            },
+            "required": ["codec"]
+          },
+          "then": {
+            "required": ["schema_ref"],
+            "properties": {
+              "schema_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "wire_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "oneOf": [
+            {"$ref": "#/$defs/payload_contract"},
+            {"type": "null"}
+          ]
+        },
+        "response": {
+          "oneOf": [
+            {"$ref": "#/$defs/payload_contract"},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "clock",
+        "random",
+        "http_client",
+        "key_value_read",
+        "key_value_write",
+        "database_read",
+        "database_write",
+        "queue_publish",
+        "queue_consume",
+        "object_storage_read",
+        "object_storage_write",
+        "secrets_read",
+        "spawn",
+        "filesystem_read",
+        "filesystem_write"
+      ]
+    },
+    "module_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "invocation",
+        "concurrency",
+        "cancellation",
+        "default_timeout_ms",
+        "max_concurrency",
+        "idempotent",
+        "retry_safe"
+      ],
+      "properties": {
+        "invocation": {
+          "$ref": "#/$defs/invocation_mode"
+        },
+        "concurrency": {
+          "$ref": "#/$defs/concurrency_model"
+        },
+        "cancellation": {
+          "$ref": "#/$defs/cancellation_model"
+        },
+        "default_timeout_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_concurrency": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "retry_safe": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["wire"]
+      },
+      "then": {
+        "required": ["semantics_version"],
+        "properties": {
+          "semantics_version": {
+            "const": "ores-stack.module-semantics/v3"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "lambda"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.lambda.v1"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "http"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.http.v1"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "rpc"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.rpc.v1"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "page"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.page.v1"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "middleware"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.middleware.v1"}}
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "worker"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {"interface": {"const": "ores-stack.worker.v1"}}
+      }
+    }
+  ]
+}
