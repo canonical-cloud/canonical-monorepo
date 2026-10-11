@@ -1,0 +1,15 @@
+define class Counter as
+  pub let int value = 1;
+end
+fnc mutate(borrow mut Counter c, int path): int {
+  defer c.value = c.value + 1;
+  defer c.value = c.value * 10;
+  if (path eq 0) { return c.value; } fi
+  return c.value;
+}
+pub fnc main(): int {
+  let mut Counter c = new Counter();
+  val first: int = mutate(rt borrow mut c, 0);
+  val second: int = mutate(rt borrow mut c, 1);
+  return first * 100 + second + c.value;
+}
