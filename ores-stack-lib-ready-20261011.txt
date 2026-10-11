@@ -1,3 +1,4 @@
 Source 8ee75d5d4e4003605cc3e2bf1931dcc6836a9909
 Exact tree 3a112cb6c1b1795817a2939dd827bfe061bd02eb
 Dependency b44393aa9ef3c235d9215469e9929992bdda00c0
+Identity gate: reusable v1 verifier and pinned manifests

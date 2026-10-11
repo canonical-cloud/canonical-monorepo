@@ -1,0 +1,15 @@
+{
+  "schema": "ores.exact-tree.v1",
+  "source": {
+    "repository": "ores-stack/ores-stack-pub-lib-core",
+    "commit": "5901b05f82b8985e522f59828a01c35ef3a9727a",
+    "tree": "b44393aa9ef3c235d9215469e9929992bdda00c0",
+    "mirror_path": "pub-lib-core-source"
+  },
+  "blobs": [
+    {
+      "path": "Cargo.toml",
+      "sha": "43093958d90a8852ec056a565b7c33e6fbe8f075"
+    }
+  ]
+}
