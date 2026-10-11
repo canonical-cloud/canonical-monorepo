@@ -125,7 +125,7 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
-    void deferredArrayMutationPreservesTheOriginalReturnedObject() {
+    void deferredArrayMutationPreservesTheOriginalReturnedObject() throws Exception {
         String code = """
                 fnc make(): Array<int> {
                   let mut Array<int> result = new Array<int>();
@@ -145,7 +145,7 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
-    void deferredArrayMutationsExecuteInLifoOrder() {
+    void deferredArrayMutationsExecuteInLifoOrder() throws Exception {
         String code = """
                 fnc make(): Array<int> {
                   let mut Array<int> result = new Array<int>();
@@ -165,7 +165,7 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
-    void deferredLambdaIsInvokedAndMayMutateReturnedReferent() {
+    void deferredLambdaIsInvokedAndMayMutateReturnedReferent() throws Exception {
         String code = BOX + """
                 fnc make(): Box {
                   val Box result = new Box();
@@ -208,7 +208,7 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
-    void mutableReturnedObjectIsModifiedByDefer() {
+    void mutableReturnedObjectIsModifiedByDefer() throws Exception {
         String code = BOX + """
                 fnc bump(borrow mut Box box): void {
                   box.value = box.value + 1;
