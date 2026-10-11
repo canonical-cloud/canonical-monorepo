@@ -1,0 +1,25 @@
+name: Java LLVM paired source-check evidence harness
+on:
+  push:
+    branches: [ci/paired-java-llvm-conformance-harness-20261011]
+    paths: [ci-paired-conformance-ready.txt]
+permissions:
+  contents: read
+jobs:
+  paired-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify exact conformance source Git tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:oreslang-conformance-source)" = "dc6763f8f207b9b02fdb03b1fb5aa90dcc8519a2"
+      - name: Run harness unit and paired-proof negative tests
+        working-directory: oreslang-conformance-source
+        run: npm test
+      # npm test uses a fake checker for HARNESS self-tests only.
+      # This run makes NO claim of actual Java/LLVM runtime parity.
