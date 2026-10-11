@@ -1,0 +1,11 @@
+{
+  "schema": "ores.private-exact-tree-ci/v1",
+  "sources": [
+    {
+      "origin": "ores-truffle-oreslang/oreslang-stack-cli",
+      "commit": "9d1f54db348231dbd4c7e02d9e13e2d9d011a042",
+      "tree": "4e0c22571664fa2027c210ce2b2286b1ab57caa5",
+      "mirror_prefix": "oreslang-cli-pr8"
+    }
+  ]
+}
