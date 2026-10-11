@@ -1,0 +1,50 @@
+name: Oreslang Stack CLI exact-tree identity and bootstrap contract
+on:
+  push:
+    branches:
+      - ci/oreslang-stack-cli-exact-identity-20261011
+    paths:
+      - oreslang-cli-ready-20261011.txt
+permissions:
+  contents: read
+jobs:
+  exact-contract:
+    name: Exact-tree Oreslang Stack CLI contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify exact pinned private source tree before running tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:oreslang-cli-source)" = "8906001120d062c481391188a117db44ad402e9d"
+          test -f oreslang-cli-source/src/main.ores
+          test ! -e oreslang-cli-source/Cargo.toml
+      - name: Check documented repository and CLI identity
+        working-directory: oreslang-cli-source
+        run: python3 tests/check-project-identity.py
+      - name: Check POSIX host script syntax
+        working-directory: oreslang-cli-source
+        run: bash -n bin/oreslang-stack
+      - name: Build pinned public flags-2-env for bootstrap contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init /tmp/flags-2-env
+          git -C /tmp/flags-2-env remote add origin https://github.com/flags-2-env/flags-2-env.git
+          git -C /tmp/flags-2-env fetch --depth 1 origin 7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9
+          git -C /tmp/flags-2-env checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/flags-2-env rev-parse HEAD)" = "7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9"
+          make -C /tmp/flags-2-env cli
+          echo "/tmp/flags-2-env/build" >> "$GITHUB_PATH"
+      - name: Check canonical CLI flag schema and mock-runtime bootstrap
+        working-directory: oreslang-cli-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags2env audit .cli-flags.toml
+          bash tests/bootstrap-contract.sh
+      # Deliberately no cross-org private checkout/token and no claim of native Oreslang compilation.
