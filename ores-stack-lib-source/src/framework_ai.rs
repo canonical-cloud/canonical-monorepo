@@ -154,7 +154,10 @@ impl FrameworkAiClient {
         }
     }
 
-    pub async fn query(&self, mut request: FrameworkAiQuery) -> Result<FrameworkAiAnswer, FrameworkAiError> {
+    pub async fn query(
+        &self,
+        mut request: FrameworkAiQuery,
+    ) -> Result<FrameworkAiAnswer, FrameworkAiError> {
         if request.query.trim().is_empty() {
             return Err(FrameworkAiError::EmptyQuery);
         }
@@ -246,7 +249,10 @@ impl FrameworkAiClient {
 }
 
 fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 #[cfg(test)]
@@ -284,16 +290,25 @@ mod tests {
 
     #[test]
     fn strict_policy_accepts_pinned_answer() {
-        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict("http://127.0.0.1:9127", release()));
+        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict(
+            "http://127.0.0.1:9127",
+            release(),
+        ));
         assert!(client.verify_answer(&answer()).is_ok());
     }
 
     #[test]
     fn strict_policy_rejects_release_mismatch() {
-        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict("http://127.0.0.1:9127", release()));
+        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict(
+            "http://127.0.0.1:9127",
+            release(),
+        ));
         let mut value = answer();
         value.release.version = "0.2.0".to_owned();
-        assert!(matches!(client.verify_answer(&value), Err(FrameworkAiError::ReleaseMismatch { .. })));
+        assert!(matches!(
+            client.verify_answer(&value),
+            Err(FrameworkAiError::ReleaseMismatch { .. })
+        ));
     }
 
     #[test]
@@ -301,6 +316,9 @@ mod tests {
         let first = answer();
         let mut second = answer();
         second.evidence[0].end_line += 1;
-        assert_ne!(FrameworkAiClient::evidence_fingerprint(&first), FrameworkAiClient::evidence_fingerprint(&second));
+        assert_ne!(
+            FrameworkAiClient::evidence_fingerprint(&first),
+            FrameworkAiClient::evidence_fingerprint(&second)
+        );
     }
 }
