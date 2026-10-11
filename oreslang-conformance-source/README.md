@@ -35,3 +35,9 @@ When no backend command is supplied, the run exits non-success with explicit UNC
 **Security**: never mirror private compiler source into public repos. Same-org private GitHub repositories are not automatically readable with the test repo GITHUB_TOKEN. Use authorized credentials or approved private exact-tree CI mirroring; keep SHA evidence and delete temporary mirrors.
 
 See https://ores-truffle-oreslang.github.io/logs/2/
+
+## Paired Java/LLVM source-check evidence gate
+
+`src/paired-proof.mjs` provides `verifyPairedSourceChecks(javaRun, llvmRun)`. It requires both configured backends to report complete verified results for the **same fixture IDs and SHA-256 contents**, each with an immutable declared source commit and hashed executable. It rejects partial, stale, unconfigured, or differing fixture sets.
+
+The result is intentionally named `PAIRED_SOURCE_CHECKS_PASS` and explicitly sets `certifiesRuntimeParity: false` and `certifiesCompilerBuildProvenance: false`. Unit tests use artificial backend results; their green status is only evidence that the checker itself fails closed. Before release, supply real pinned Java/Graal and LLVM build outputs, independently attest the compiler-source relationship, then execute actual runtime-output, actor scheduling, ownership, and resource-lifecycle parity fixtures.
