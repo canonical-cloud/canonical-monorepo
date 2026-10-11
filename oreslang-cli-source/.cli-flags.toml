@@ -1,0 +1,89 @@
+[help]
+url = "https://github.com/ores-truffle-oreslang/oreslang-stack-cli"
+columns = ["options", "env", "type", "default", "description"]
+
+[env]
+files = []
+
+[parse]
+command_env = "ORESLANG_STACK_COMMAND"
+positionals_env = "ORESLANG_STACK_POSITIONALS"
+unknown_options_env = "ORESLANG_STACK_UNKNOWN_OPTIONS"
+errors_env = "ORESLANG_STACK_PARSE_ERRORS"
+allow_unknown = false
+
+[flags.root]
+env = "ORESLANG_STACK_ROOT"
+aliases = ["root"]
+type = "string"
+default = "."
+help = "Existing Oreslang application project directory."
+
+[flags.entry]
+env = "ORESLANG_STACK_ENTRY"
+aliases = ["entry"]
+type = "string"
+default = "src/main.ores"
+help = "Relative Oreslang application entrypoint."
+
+[flags.backend]
+env = "ORESLANG_STACK_BACKEND"
+aliases = ["backend"]
+type = "string"
+default = "graal"
+help = "graal is implemented for dev and source-bundle build; llvm fails closed."
+
+
+[commands.init]
+env = "ORESLANG_STACK_COMMAND_INIT"
+help = "Initialize a new Oreslang API or web stack without replacing existing files."
+
+[commands.init.flags.role]
+env = "ORESLANG_STACK_ROLE"
+aliases = ["role"]
+type = "string"
+help = "Required stack role: api, admin-api, web, admin-web, infra, or lambdas (candidate-only)."
+
+[commands.routes]
+env = "ORESLANG_STACK_COMMAND_ROUTES"
+help = "Read source-tree routes and print canonical route manifest."
+
+[commands.generate]
+env = "ORESLANG_STACK_COMMAND_GENERATE"
+help = "Generate canonical RPC/Lambda/GraphQL sibling adapters from Oreslang sources."
+
+[commands.generate.flags.kind]
+env = "ORESLANG_STACK_KIND"
+aliases = ["kind"]
+type = "string"
+default = "all"
+help = "Generate all, rpc, lambda or graphql (web routes only support lambda)."
+
+[commands.generate.flags.check]
+env = "ORESLANG_STACK_CHECK"
+aliases = ["check"]
+type = "bool"
+default = "false"
+help = "Check generated output byte equality without writing."
+
+[commands.check]
+env = "ORESLANG_STACK_COMMAND_CHECK"
+help = "Check adapter drift and run the native Oreslang compiler on every source."
+
+[commands.dev]
+env = "ORESLANG_STACK_COMMAND_DEV"
+help = "Run the Oreslang application once with the Java/Graal runtime."
+
+[commands.build]
+env = "ORESLANG_STACK_COMMAND_BUILD"
+help = "Type-check the entrypoint, then produce a source-only bundle."
+
+[commands.deploy]
+env = "ORESLANG_STACK_COMMAND_DEPLOY"
+help = "Reserved for a certified Oreslang deployment adapter; currently denied."
+
+[commands.deploy.flags.target]
+env = "ORESLANG_STACK_TARGET"
+aliases = ["target"]
+type = "string"
+help = "Future deployment adapter target; no target is admitted yet."

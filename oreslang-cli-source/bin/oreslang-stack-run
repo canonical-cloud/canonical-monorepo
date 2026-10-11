@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Runtime-dependent Oreslang source distribution, not a compiled binary.
+set -euo pipefail
+bundle="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
+oreslang_bin="oreslang"
+if [[ -n "${ORESLANG_BIN:-}" ]]; then oreslang_bin="$ORESLANG_BIN"; fi
+if ! command -v "$oreslang_bin" >/dev/null 2>&1; then
+  echo "Oreslang runtime missing: install Java/Graal Oreslang or set ORESLANG_BIN" >&2
+  exit 127
+fi
+if [[ ! -f "$bundle/.oreslang-stack-entry" || -L "$bundle/.oreslang-stack-entry" ]]; then
+  echo "Oreslang source bundle lacks an entrypoint receipt" >&2
+  exit 1
+fi
+IFS= read -r entry < "$bundle/.oreslang-stack-entry" || [[ -n "${entry:-}" ]]
+case "$entry" in
+  src/*) ;;
+  *) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
+esac
+case "$entry" in
+  */../*|*/..|*[![:print:]]*) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
+esac
+if [[ ! -f "$bundle/$entry" || -L "$bundle/$entry" ]]; then
+  echo "Oreslang application entrypoint missing from source bundle" >&2
+  exit 1
+fi
+exec "$oreslang_bin" --allow-read="$bundle" "$bundle/$entry"
