@@ -1,0 +1,56 @@
+name: ORES Stack lib-core framework AI exact-tree test
+on:
+  push:
+    branches:
+      - ci/ores-stack-lib-framework-ai-exact-20261011
+    paths:
+      - ores-stack-lib-ready-20261011.txt
+permissions:
+  contents: read
+jobs:
+  rust-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify both exact private Git trees and pinned conformance fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:ores-stack-lib-source)" = "5d1675518c40f8a5573fc90111debb4620e93a72"
+          test "$(git rev-parse HEAD:pub-lib-core-source)" = "b44393aa9ef3c235d9215469e9929992bdda00c0"
+          test "$(git rev-parse HEAD:ci/fixtures/stack-sdk-dev-v1.json)" = "a99628b786ee7cfa88616f19e9c1d4ef6e27065d"
+          echo 'Exact source, pinned dependency, and fixture verified'
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: "1.88"
+          components: rustfmt, clippy
+      - name: Format actual exact-source tree without rewriting it
+        working-directory: ores-stack-lib-source
+        run: cargo fmt --all -- --check
+      - name: Point private Git dependency at byte-identical pinned local mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("ores-stack-lib-source/Cargo.toml")
+          s = p.read_text()
+          before = 'ores-stack-pub-lib-core = { git = "https://github.com/ores-stack/ores-stack-pub-lib-core.git", rev = "5901b05f82b8985e522f59828a01c35ef3a9727a" }'
+          after = 'ores-stack-pub-lib-core = { path = "../pub-lib-core-source" }'
+          if s.count(before) != 1:
+              raise SystemExit("Unexpected private-dependency declaration; refusing to alter build copy")
+          p.write_text(s.replace(before, after))
+          print("Only the private dependency locator was localized; source and dependency trees were verified first.")
+          PY
+          echo "ORES_STACK_SDK_CONFORMANCE=$GITHUB_WORKSPACE/ci/fixtures/stack-sdk-dev-v1.json" >> "$GITHUB_ENV"
+      - name: Compile and lint Rust framework AI client and combined runtime bindings
+        working-directory: ores-stack-lib-source
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Run Rust tests and compile-fail conformance
+        working-directory: ores-stack-lib-source
+        run: cargo test --all-targets --all-features
+      # This is an exact-blob source mirror; only the pinned private dependency URL is
+      # replaced by its SHA-verified local copy after the identity gate, without secrets.
