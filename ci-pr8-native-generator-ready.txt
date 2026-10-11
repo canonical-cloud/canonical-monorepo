@@ -1,0 +1,3 @@
+PR8 guest source 9d1f54db348231dbd4c7e02d9e13e2d9d011a042 (tree 4e0c22571664fa2027c210ce2b2286b1ab57caa5)
+Java runtime source c2694aefdec2c1365527acebd13bd705ac96a690
+Java build inputs exact Git object identities; real native generator tests with GraalVM 25.
