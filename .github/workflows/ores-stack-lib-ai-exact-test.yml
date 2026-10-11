@@ -19,7 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD:ores-stack-lib-source)" = "f36b4a6a0af96572c29f38b3c55f9e505430c8f2"
+          test "$(git rev-parse HEAD:ores-stack-lib-source)" = "3a112cb6c1b1795817a2939dd827bfe061bd02eb"
           test "$(git rev-parse HEAD:pub-lib-core-source)" = "b44393aa9ef3c235d9215469e9929992bdda00c0"
           test "$(git rev-parse HEAD:ci/fixtures/stack-sdk-dev-v1.json)" = "a99628b786ee7cfa88616f19e9c1d4ef6e27065d"
           echo 'Exact source, pinned dependency, and fixture verified'

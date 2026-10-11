@@ -97,3 +97,29 @@ fn malformed_json_is_not_accepted_as_an_answer() {
         },
     );
 }
+
+#[test]
+fn stalled_response_body_hits_total_request_timeout() {
+    // Receiving headers and one body byte must not reset the total 15s deadline.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
+    let endpoint = format!("http://{}", listener.local_addr().expect("local address"));
+    let server = thread::spawn(move || {
+        let (mut conn, _) = listener.accept().expect("accept request");
+        conn.set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .expect("request read timeout");
+        let mut buffer = [0_u8; 8192];
+        let received = conn.read(&mut buffer).expect("read HTTP request");
+        assert!(String::from_utf8_lossy(&buffer[..received]).contains("/v1/framework-ai/query"));
+        conn.write_all(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 42\r\nConnection: close\r\n\r\n{",
+        )
+        .expect("send partial HTTP body");
+        thread::sleep(std::time::Duration::from_secs(16));
+    });
+    let client = FrameworkAiClient::new(FrameworkAiPolicy::strict(endpoint, release()));
+    assert!(matches!(
+        query(client).expect("request must fail"),
+        FrameworkAiError::Transport(err) if err.is_timeout()
+    ));
+    server.join().expect("mock HTTP server thread");
+}
