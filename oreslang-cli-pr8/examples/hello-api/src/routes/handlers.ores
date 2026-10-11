@@ -1,0 +1,5 @@
+define module handlers as
+  pub fnc greet(String request) -> String {
+    return request;
+  }
+end

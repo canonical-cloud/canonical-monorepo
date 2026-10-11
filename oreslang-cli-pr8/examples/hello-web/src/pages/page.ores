@@ -1,0 +1,6 @@
+// @ores-page / render
+define module page as
+  pub fnc render(String request) -> String {
+    return "<main>Hello from Oreslang</main>";
+  }
+end
