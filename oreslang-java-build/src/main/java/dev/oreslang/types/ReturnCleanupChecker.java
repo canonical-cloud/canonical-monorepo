@@ -88,8 +88,16 @@ public final class ReturnCleanupChecker {
         for (Ast.Stmt stmt : statements) {
             if (stmt instanceof Ast.BindingStmt binding) {
                 expression(binding.initializer(), scope, inDefer, state);
-                scope.define(binding.name(),
-                        binding.initializer() instanceof Ast.LambdaExpr lambda ? lambda : null);
+                Ast.LambdaExpr cleanupClosure = null;
+                if (binding.initializer() instanceof Ast.LambdaExpr lambda) {
+                    cleanupClosure = lambda;
+                } else if (binding.initializer() instanceof Ast.NameExpr alias) {
+                    Binding source = scope.resolve(alias.name());
+                    if (source != null) cleanupClosure = source.closure;
+                }
+                // Propagate the lexical callback identity across simple aliases.
+                // A deferred call through an alias must not bypass analysis.
+                scope.define(binding.name(), cleanupClosure);
             } else if (stmt instanceof Ast.DestructureStmt destructure) {
                 expression(destructure.initializer(), scope, inDefer, state);
                 for (Ast.DestructureBinding binding : destructure.bindings()) {

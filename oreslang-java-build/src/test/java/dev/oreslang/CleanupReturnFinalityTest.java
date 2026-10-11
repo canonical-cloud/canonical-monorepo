@@ -125,6 +125,71 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
+    void aliasedDeferredCallbackCannotRebindReturnedBinding() {
+        rejected("""
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  const cleanup = || -> { result = new Box(); };
+                  const alias = cleanup;
+                  defer alias();
+                  return result;
+                }
+                """, "defer cannot reassign returned binding 'result'");
+    }
+
+    @Test
+    void finallyMayMutateThePendingMutableReturnObject() throws Exception {
+        String source = BOX + """
+                fnc make(): Box {
+                  val Box result = new Box();
+                  try { return result; }
+                  catch (err) { return result; }
+                  finally { result.value = 7; }
+                }
+                pub fnc main(): int {
+                  val Box b = make();
+                  return b.value;
+                }
+                """;
+        assertDoesNotThrow(() -> TypeChecker.check(Parser.parse(source)));
+        try (Context context = Context.newBuilder("ores").allowAllAccess(false).build()) {
+            assertEquals(7L, context.eval(
+                    Source.newBuilder("ores", source, "finally-return-object.ores").build()).asLong());
+        }
+    }
+
+    @Test
+    void failedDeferredCleanupDoesNotSkipRemainingDefers() throws Exception {
+        String source = """
+                fnc fail(): void {
+                  val Array<int> empty = new Array<int>();
+                  empty.get(0);
+                  return;
+                }
+                fnc perform(borrow mut Array<int> output): void {
+                  defer output.add(1);
+                  defer fail();
+                  defer output.add(2);
+                  return;
+                }
+                pub fnc main(): int {
+                  let mut Array<int> output = new Array<int>();
+                  try {
+                    perform(rt borrow mut output);
+                  } catch (err) {
+                  } finally {
+                  }
+                  return output.get(0) * 10 + output.get(1);
+                }
+                """;
+        assertDoesNotThrow(() -> TypeChecker.check(Parser.parse(source)));
+        try (Context context = Context.newBuilder("ores").allowAllAccess(false).build()) {
+            assertEquals(21L, context.eval(
+                    Source.newBuilder("ores", source, "failed-deferred-cleanup.ores").build()).asLong());
+        }
+    }
+
+    @Test
     void deferredArrayMutationPreservesTheOriginalReturnedObject() throws Exception {
         String code = """
                 fnc make(): Array<int> {
