@@ -1,0 +1,2 @@
+Oreslang cross-org runner preflight 2026-10-11
+Project identities are distinct; source mirrors are temporary CI fixtures.
