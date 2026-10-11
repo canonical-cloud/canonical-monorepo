@@ -1,0 +1,49 @@
+name: Oreslang Stack CLI PR8 exact-tree host contract
+on:
+  push:
+    branches: [ci/oreslang-cli-pr8-host-exact-20261011]
+    paths: [oreslang-cli-pr8-ready-20261011.txt]
+permissions:
+  contents: read
+jobs:
+  host-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Require exact PR8 private source subtree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:oreslang-cli-pr8)" = "f7d005285b3254eca2071a4b5ea6e9403b4fdb47"
+          test -s oreslang-cli-pr8/src/main.ores
+          test ! -e oreslang-cli-pr8/Cargo.toml
+      - name: Shell syntax for bootstrap and native-generator test harness
+        working-directory: oreslang-cli-pr8
+        run: |
+          bash -n bin/oreslang-stack
+          bash -n bin/oreslang-stack-run
+          bash -n tests/bootstrap-contract.sh
+          bash -n tests/native-generator-contract.sh
+      - name: Build pinned public flags-2-env parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          git init /tmp/flags-2-env
+          git -C /tmp/flags-2-env remote add origin https://github.com/flags-2-env/flags-2-env.git
+          git -C /tmp/flags-2-env fetch --depth 1 origin 7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9
+          git -C /tmp/flags-2-env checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/flags-2-env rev-parse HEAD)" = "7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9"
+          make -C /tmp/flags-2-env cli
+          echo "/tmp/flags-2-env/build" >> "$GITHUB_PATH"
+      - name: Validate flags schema and mock-runtime host bridge
+        working-directory: oreslang-cli-pr8
+        shell: bash
+        run: |
+          set -euo pipefail
+          flags2env audit .cli-flags.toml
+          bash tests/bootstrap-contract.sh
+      # This only verifies PR8 host/bootstrap behavior, NOT its native Java/Graal
+      # Oreslang generator or deployment/readiness semantics.
