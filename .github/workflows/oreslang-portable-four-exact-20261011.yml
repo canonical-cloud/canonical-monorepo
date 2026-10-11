@@ -1,0 +1,51 @@
+name: Oreslang four portable repos exact-head unit gates
+on:
+  push:
+    branches:
+      - ci/oreslang-portable-four-exact-20261011
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact private source PR blobs without accessing upstream tokens
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const manifest=JSON.parse(readFileSync('portable/expected-source-blobs.json','utf8'));
+          assert.equal(manifest.schemaVersion,1);
+          let count=0;
+          for(const source of manifest.sources){
+            assert.match(source.head,/^[a-f0-9]{40}$/);
+            for(const file of source.files){
+              assert.match(file.path,/^[a-zA-Z0-9_.\/-]+$/);
+              const path='portable/'+source.package+'/'+file.path;
+              const hash=execFileSync('git',['hash-object',path],{encoding:'utf8'}).trim();
+              assert.equal(hash,file.blob,path+' changed from source PR '+source.head);
+              count++;
+            }
+          }
+          console.log('PINNED_PORTABLE_SOURCE_BLOBS_VERIFIED '+count);
+          JS
+      - name: Install wasm32 C toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang lld
+      - name: Target profiles complete Node suite
+        working-directory: portable/oreslang-target-profiles
+        run: npm test
+      - name: Browser loader complete Node suite
+        working-directory: portable/oreslang-browser
+        run: npm test
+      - name: Wasm core runtime and bridge complete Node suite
+        working-directory: portable/oreslang-wasm
+        run: npm test
+      - name: Platform conformance harness complete Node suite
+        working-directory: portable/oreslang-platform-conformance
+        run: npm test
