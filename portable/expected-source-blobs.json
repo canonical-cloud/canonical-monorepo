@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "note": "Selected exact PR-head file blobs for executable portable-platform Node suites; missing documentation files do not change executed test inputs.",
+  "sources": [
+    {
+      "repo": "ores-truffle-oreslang/oreslang-browser",
+      "head": "d3d5b01c7d4b84931bd7011f6458595fcadc07be",
+      "package": "oreslang-browser",
+      "files": [
+        {
+          "path": "package.json",
+          "blob": "06b3975d24e118bc35e1e39c387e4d58ceadc039"
+        },
+        {
+          "path": "src/abi.mjs",
+          "blob": "26637301a460a573edf38c5fdc00f18bf807085a"
+        },
+        {
+          "path": "src/artifact.mjs",
+          "blob": "e6c53008ccdd3c7db93cfd30e8762687e034b86c"
+        },
+        {
+          "path": "src/inspect.mjs",
+          "blob": "36eb0f3dc1b948a74d5a4e3691b19dfc6192650b"
+        },
+        {
+          "path": "src/loader.mjs",
+          "blob": "d006c346ea05e9c347af8452eb2c9e2320090efc"
+        },
+        {
+          "path": "tests/abi.test.mjs",
+          "blob": "8ac8ada1a62a6b1c0ae783afffc40d0d32ed6877"
+        },
+        {
+          "path": "tests/artifact.test.mjs",
+          "blob": "c79afb79ff98945a6d5908d051b8118e4e4af9d6"
+        },
+        {
+          "path": "tests/cross-repo.test.mjs",
+          "blob": "96fe1f04c4415cf8e0aa423c03f6fa649c0a51a4"
+        },
+        {
+          "path": "tests/loader.test.mjs",
+          "blob": "4afc871c5de68da08640841fded5db2acf90ccf7"
+        }
+      ]
+    },
+    {
+      "repo": "ores-truffle-oreslang/oreslang-target-profiles",
+      "head": "8de9f3dd635d5df22232990520ff4358dc0fdfc6",
+      "package": "oreslang-target-profiles",
+      "files": [
+        {
+          "path": "bin/oreslang-target.mjs",
+          "blob": "4dea877e6f087a32ac7bc884fabfde971e5b4642"
+        },
+        {
+          "path": "examples/portable-closure.json",
+          "blob": "2309ce328a9e95addb492f608809817364a2681f"
+        },
+        {
+          "path": "package.json",
+          "blob": "f1c4b7d8cfbe0e3aa915cc8320e0a56c4fe130a4"
+        },
+        {
+          "path": "profiles/android.json",
+          "blob": "273dbe94989dcccc360ca90c24811ea0cb8e5390"
+        },
+        {
+          "path": "profiles/browser.json",
+          "blob": "63164faa9d4c53a8ab71b344858b322ffc73e63a"
+        },
+        {
+          "path": "profiles/desktop.json",
+          "blob": "241d59c108eafd4549c1b1f477babc88272e179f"
+        },
+        {
+          "path": "profiles/edge-js.json",
+          "blob": "29aa1a64980dc15ecb1d717ce2683a4aa6d4223f"
+        },
+        {
+          "path": "profiles/edge-wasi.json",
+          "blob": "3e2face1b077e317130d1ddefb814ed155d2085c"
+        },
+        {
+          "path": "profiles/embedded.json",
+          "blob": "ca9c1a5dae06ded662bfc31915932577a63f71d7"
+        },
+        {
+          "path": "profiles/ios.json",
+          "blob": "02071846966d51ca4c80877205b39c866f239950"
+        },
+        {
+          "path": "profiles/server.json",
+          "blob": "167c6161b8a40a86fc60fabe1e53ae13328a75e3"
+        },
+        {
+          "path": "src/artifact.mjs",
+          "blob": "dbbb94786ca6eaf7985fc59b37b2cb19144aa244"
+        },
+        {
+          "path": "src/contract.mjs",
+          "blob": "6faf5bdf898762cf858a4cb04fa661553a6e7822"
+        },
+        {
+          "path": "src/load-registry.mjs",
+          "blob": "6e7d4d5c00a8a6aa331cf43bdedfd230a6c6bf62"
+        },
+        {
+          "path": "tests/artifact.test.mjs",
+          "blob": "f96c87d8b45e5bf104674a561bcf509d21eaa49a"
+        },
+        {
+          "path": "tests/contract.test.mjs",
+          "blob": "2e9d6854534fa977fcfaa7c1866923207fddbce9"
+        },
+        {
+          "path": "tests/exact-grants.test.mjs",
+          "blob": "118750883893d178433416eb0585d0a0c118b4b0"
+        }
+      ]
+    },
+    {
+      "repo": "ores-truffle-oreslang/oreslang-platform-conformance",
+      "head": "436a1cc1aeb86658c63ed30827a8b63b3986805e",
+      "package": "oreslang-platform-conformance",
+      "files": [
+        {
+          "path": "bin/conformance.mjs",
+          "blob": "3fbb42b745e71eb7d2a699951e9bb606f1a54c22"
+        },
+        {
+          "path": "bin/wasm-core-conformance.mjs",
+          "blob": "08cf849b99cd38c7aa46005ae45b29326f304491"
+        },
+        {
+          "path": "fixtures/int-arithmetic.ores",
+          "blob": "d5408d2e3364254e2661e6850e2455c77d404b5e"
+        },
+        {
+          "path": "fixtures/manifest.json",
+          "blob": "3f603c1b1dd388eef6432026c337b01f9856cb27"
+        },
+        {
+          "path": "fixtures/structured/class-mutable.ores",
+          "blob": "3cad92b8c5f7c4d5b97472a7247ab0c10455078b"
+        },
+        {
+          "path": "fixtures/structured/class-overlap.ores",
+          "blob": "2664d2fa411e4e5ea84d1c817c3f9e31ac45b511"
+        },
+        {
+          "path": "fixtures/structured/class-read.ores",
+          "blob": "af05262cfcd81fd13ed7e54b2e6b03db8032e20b"
+        },
+        {
+          "path": "fixtures/structured/manifest.json",
+          "blob": "ab1c9e2423dc3ed2e0d072caeeb42151b65c51a7"
+        },
+        {
+          "path": "fixtures/unresolved-identifier.ores",
+          "blob": "e65dd35a794dad4d27f853f4231ba9f7e76b0ece"
+        },
+        {
+          "path": "package.json",
+          "blob": "23113c429c9bbfc65907d4d1fac6b5c0ea045ba3"
+        },
+        {
+          "path": "src/harness.mjs",
+          "blob": "3e06e2bf3d00f6b2f3bfae3c45a60efab64fd2f5"
+        },
+        {
+          "path": "src/wasm-guest-child.mjs",
+          "blob": "1e04137a869282c84f43c456d479c674bdc23ba2"
+        },
+        {
+          "path": "tests/fake-checker.mjs",
+          "blob": "9d9d175fbdf1701bb67333b2650d4c5e39266b85"
+        },
+        {
+          "path": "tests/harness.test.mjs",
+          "blob": "a55e1f39df3864cd56a07923e717b56e4b086acf"
+        },
+        {
+          "path": "tests/structured-source.test.mjs",
+          "blob": "e24e71f478edec060df5c3e2ab73694bd68e5fd3"
+        },
+        {
+          "path": "tests/wasm-core.test.mjs",
+          "blob": "3bbb3f971a95bccceee5e98ffc29fd44bac70708"
+        },
+        {
+          "path": "tests/wasm-i64-oracle.test.mjs",
+          "blob": "6a5fce0f02e6e5763227e419ac1d615d76c7d178"
+        }
+      ]
+    },
+    {
+      "repo": "ores-truffle-oreslang/oreslang-wasm",
+      "head": "fcf07510eddf5afa7130f0cb61fd35742ce8fed0",
+      "package": "oreslang-wasm",
+      "files": [
+        {
+          "path": "examples/hello.ores",
+          "blob": "96bcc36e1be2f99d98679069bbc05a261e3a5b7d"
+        },
+        {
+          "path": "examples/native-int.ores",
+          "blob": "8da5552e4e58686cef50475b9504216b075c60f7"
+        },
+        {
+          "path": "examples/structured-mutable-borrow.ores",
+          "blob": "3cad92b8c5f7c4d5b97472a7247ab0c10455078b"
+        },
+        {
+          "path": "examples/structured-overlap-reject.ores",
+          "blob": "2664d2fa411e4e5ea84d1c817c3f9e31ac45b511"
+        },
+        {
+          "path": "examples/structured-shared-borrow.ores",
+          "blob": "af05262cfcd81fd13ed7e54b2e6b03db8032e20b"
+        },
+        {
+          "path": "package.json",
+          "blob": "20d5f0242914366bc530e08a32ba3092170cf82e"
+        },
+        {
+          "path": "runtime/oreslang_rt.c",
+          "blob": "ce31d415772f9b6f476d580cdac8a97d34d5d575"
+        },
+        {
+          "path": "runtime/oreslang_rt.h",
+          "blob": "c84c5180ef3b1d0fe415563ac4feee21152fcd16"
+        },
+        {
+          "path": "scripts/build.mjs",
+          "blob": "a9be6305e9ad12f5a27536f65b6a92aea256d57d"
+        },
+        {
+          "path": "scripts/compile-ores.mjs",
+          "blob": "851478fd41f6f49192119e92ea8e7d52b4d0d156"
+        },
+        {
+          "path": "tests/artifact.test.mjs",
+          "blob": "79d6a06fecbcedd539d1d4fe7ad698383ff77f29"
+        },
+        {
+          "path": "tests/bridge.test.mjs",
+          "blob": "d7a4d2f832d047873dc9aa7c9a3e4f1ccf67561d"
+        },
+        {
+          "path": "tests/runtime.test.mjs",
+          "blob": "2be8479660ce4620c65f05076804bc3b63ca8e6b"
+        },
+        {
+          "path": "tests/source-identity.test.mjs",
+          "blob": "1753c8515ee99d048974591e2a26addd9e0a8374"
+        },
+        {
+          "path": "tests/structured-guest.test.mjs",
+          "blob": "2f014dd68d2be6c9d86944814cf1049c578bd16b"
+        },
+        {
+          "path": "wit/oreslang-host.wit",
+          "blob": "e90ae2a4d69b332f4ed91790ad18035c726e60e0"
+        }
+      ]
+    }
+  ]
+}
