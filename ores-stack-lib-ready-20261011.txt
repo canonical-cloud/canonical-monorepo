@@ -1,3 +1,3 @@
-Security hardening source ores-stack/ores-stack-lib-core@ceb115bac266e5460ec694e88a094d5e7151d715
-Source Git tree d7db5bf8b93281c30467407c3fcc0e4fa1c4e487
-Dependency pinned 5901b05f82b8985e522f59828a01c35ef3a9727a tree b44393aa9ef3c235d9215469e9929992bdda00c0
+Security hardening ores-stack/ores-stack-lib-core@de1a4067175dddbee86ebf93cb6a7722a781173d
+Exact Git tree 1d0eb0c04a852baadf663214bdf4fcdd7baa3453
+Pinned dependency tree b44393aa9ef3c235d9215469e9929992bdda00c0
