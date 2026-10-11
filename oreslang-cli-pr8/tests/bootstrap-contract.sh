@@ -70,6 +70,8 @@ if "$repo/bin/oreslang-stack" build --root "$tmp/project"; then
   echo "directory destination must be rejected" >&2
   exit 1
 fi
+# Restore the test fixture: subsequent successful builds need a file destination.
+rmdir "$tmp/project/dist/oreslang-stack-source.tar.gz"
 if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/../escape.ores; then
   echo "entrypath traversal must fail" >&2
   exit 1
