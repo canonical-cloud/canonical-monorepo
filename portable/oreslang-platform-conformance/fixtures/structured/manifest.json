@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "scope": "bounded-class-i64-wasm32-v1",
+  "cases": [
+    {
+      "id": "class-mutable-borrow",
+      "file": "class-mutable.ores",
+      "sourceGitBlobSha1": "3cad92b8c5f7c4d5b97472a7247ab0c10455078b",
+      "expect": "accept",
+      "expectedI64": "42",
+      "confirmedBackends": [
+        "llvm",
+        "wasm"
+      ],
+      "pendingBackends": [
+        "graal"
+      ]
+    },
+    {
+      "id": "class-shared-borrow",
+      "file": "class-read.ores",
+      "sourceGitBlobSha1": "af05262cfcd81fd13ed7e54b2e6b03db8032e20b",
+      "expect": "accept",
+      "expectedI64": "42",
+      "confirmedBackends": [
+        "llvm",
+        "wasm",
+        "graal"
+      ],
+      "pendingBackends": []
+    },
+    {
+      "id": "class-overlapping-loans",
+      "file": "class-overlap.ores",
+      "sourceGitBlobSha1": "2664d2fa411e4e5ea84d1c817c3f9e31ac45b511",
+      "expect": "reject",
+      "diagnosticClass": "exclusive-loan-conflict",
+      "confirmedBackends": [
+        "llvm",
+        "wasm",
+        "graal"
+      ],
+      "pendingBackends": []
+    }
+  ],
+  "evidence": "https://github.com/akrion-sim/akrion-sim-e2e/actions/runs/38113193431",
+  "notes": "Exact GraalVM 25 run confirms shared-read result 42 and overlapping-loan rejection; the original unmarked mutable owner is rejected by Java but accepted by LLVM/Wasm. This is a documented semantic mismatch, NOT parity. A separate explicit-mut Java variant returns 42 but has not yet been proven byte-identical cross-backend.",
+  "graalEvidence": "https://github.com/zed-pkg-test/java-app/actions/runs/38154510801"
+}
