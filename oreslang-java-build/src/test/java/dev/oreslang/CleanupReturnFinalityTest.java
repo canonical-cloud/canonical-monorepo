@@ -1,6 +1,7 @@
 package dev.oreslang;
 
 import dev.oreslang.parser.Parser;
+import dev.oreslang.types.ReturnCleanupChecker;
 import dev.oreslang.types.TypeChecker;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.Source;
@@ -247,7 +248,9 @@ final class CleanupReturnFinalityTest {
 
     @Test
     void namedCallbackKeepsItsOwnShadowedBindingInFinally() {
-        admitted("""
+        // Isolate lexical-cleanup analysis: full-program ownership currently
+        // forbids using the already moved return local through finally.
+        assertDoesNotThrow(() -> ReturnCleanupChecker.check(Parser.parse(BOX + """
                 fnc make(): Box {
                   let mut Box result = new Box();
                   const cleanup = || -> {
@@ -261,7 +264,7 @@ final class CleanupReturnFinalityTest {
                     defer cleanup();
                   }
                 }
-                """);
+                """)));
     }
 
     @Test
