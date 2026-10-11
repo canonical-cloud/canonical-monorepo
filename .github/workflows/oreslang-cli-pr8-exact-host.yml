@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD:oreslang-cli-pr8)" = "f7d005285b3254eca2071a4b5ea6e9403b4fdb47"
+          test "$(git rev-parse HEAD:oreslang-cli-pr8)" = "4e0c22571664fa2027c210ce2b2286b1ab57caa5"
           test -s oreslang-cli-pr8/src/main.ores
           test ! -e oreslang-cli-pr8/Cargo.toml
       - name: Shell syntax for bootstrap and native-generator test harness
