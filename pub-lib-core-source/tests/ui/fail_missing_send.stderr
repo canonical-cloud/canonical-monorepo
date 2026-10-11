@@ -1,0 +1,12 @@
+error[E0277]: `Rc<String>` cannot be sent between threads safely
+ --> tests/ui/fail_missing_send.rs:8:18
+  |
+8 |     type Input = Rc<String>;
+  |                  ^^^^^^^^^^ `Rc<String>` cannot be sent between threads safely
+  |
+  = help: the trait `Send` is not implemented for `Rc<String>`
+note: required by a bound in `ores_stack_pub_lib_core::TypedModule::Input`
+ --> src/lib.rs
+  |
+  |     type Input: Send;
+  |                 ^^^^ required by this bound in `TypedModule::Input`

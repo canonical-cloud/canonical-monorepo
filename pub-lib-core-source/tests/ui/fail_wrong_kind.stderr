@@ -1,0 +1,18 @@
+error[E0277]: the trait bound `NotAKind: ModuleKindMarker` is not satisfied
+ --> tests/ui/fail_wrong_kind.rs:7:17
+  |
+7 |     type Kind = NotAKind;
+  |                 ^^^^^^^^ the trait `ModuleKindMarker` is not implemented for `NotAKind`
+  |
+  = help: the following other types implement trait `ModuleKindMarker`:
+            ores_stack_pub_lib_core::Http
+            ores_stack_pub_lib_core::Lambda
+            ores_stack_pub_lib_core::Middleware
+            ores_stack_pub_lib_core::Page
+            ores_stack_pub_lib_core::Rpc
+            ores_stack_pub_lib_core::Worker
+note: required by a bound in `ores_stack_pub_lib_core::TypedModule::Kind`
+ --> src/lib.rs
+  |
+  |     type Kind: ModuleKindMarker;
+  |                ^^^^^^^^^^^^^^^^ required by this bound in `TypedModule::Kind`
