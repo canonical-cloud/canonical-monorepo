@@ -1,0 +1,15 @@
+name: Oreslang PR628 funded runner allocation preflight
+on:
+  push:
+    branches: [ci/oreslang-pr628-runner-probe-20261011]
+permissions:
+  contents: read
+jobs:
+  allocate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Runner available
+        run: |
+          echo RUNNER_ALLOCATED_PR628
+          uname -s
