@@ -1,0 +1,28 @@
+name: Oreslang PR628 adjacent semantic contract
+on:
+  push:
+    branches: [ci/oreslang-pr628-adjacent-20261011]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify exact source and test file identities
+        run: |
+          test "$(git rev-parse HEAD:oreslang-java-build/src/main)" = "95603eceacd921f02222f0189df62eea1c525b84"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/BindingMutabilityContractTest.java)" = "8b7daaf76886420b2b4a0b322bde28e050cfc983"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/NativeCollectionMemberRuntimeTest.java)" = "8abea387d48b25b2565e68449574ecc02456e70d"
+      - uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
+        with:
+          version: '25.3'
+          java-version: '25'
+          distribution: graalvm
+          cache: maven
+      - name: Run focused cleanup and adjacent semantics
+        working-directory: oreslang-java-build
+        run: mvn -B -ntp -Dtest=CleanupReturnFinalityTest,BindingMutabilityContractTest,NativeCollectionMemberRuntimeTest test
