@@ -1,0 +1,291 @@
+#!/usr/bin/env bash
+# Requires Java/Graal Oreslang with stdlib PR #496, NOT a mocked runner.
+set -euo pipefail
+repo="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+cp -R "$repo/examples/hello-api" "$tmp/api"
+cp -R "$repo/examples/hello-web" "$tmp/web"
+cli="$repo/bin/oreslang-stack"
+cp -R "$repo/examples/hello-api" "$tmp/manifest-collision"
+mkdir -p "$tmp/manifest-collision/generated"
+printf '{"schema":"foreign"}\n' > "$tmp/manifest-collision/generated/route-manifest.json"
+if "$cli" generate --kind all --root "$tmp/manifest-collision"; then
+  echo "foreign route manifest must fail before writing any adapters" >&2
+  exit 1
+fi
+test ! -e "$tmp/manifest-collision/src/routes/rpc.ores"
+test ! -e "$tmp/manifest-collision/src/routes/lambda.ores"
+"$cli" generate --kind all --root "$tmp/api"
+"$cli" generate --kind all --check --root "$tmp/api"
+"$cli" check --root "$tmp/api"
+"$cli" routes --root "$tmp/api" | grep -F '"kind":"route"'
+grep -F 'route.greet(request)' "$tmp/api/src/routes/rpc.ores"
+grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/lambda.ores"
+grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/graphql.ores"
+grep -F 'type Query' "$tmp/api/src/routes/graphql.graphql"
+"$cli" generate --kind graphql --check --root "$tmp/api"
+grep -F 'oreslang.stack.inventory/v1' "$tmp/api/generated/route-manifest.json"
+"$cli" build --root "$tmp/api"
+test -s "$tmp/api/dist/oreslang-stack-source.tar.gz"
+tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslang-stack-run"
+tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "generated/route-manifest.json"
+printf '\n// deliberately stale\n' >> "$tmp/api/src/routes/rpc.ores"
+if "$cli" generate --kind all --check --root "$tmp/api"; then
+  echo "stale generated file must fail verification" >&2
+  exit 1
+fi
+"$cli" generate --kind all --root "$tmp/api"
+printf 'hand authored\n' > "$tmp/api/src/routes/rpc.ores"
+if "$cli" generate --kind all --root "$tmp/api"; then
+  echo "hand-authored file must not be overwritten" >&2
+  exit 1
+fi
+"$cli" generate --kind all --root "$tmp/web"
+"$cli" generate --kind all --check --root "$tmp/web"
+test -f "$tmp/web/src/pages/lambda.ores"
+test ! -e "$tmp/web/src/pages/rpc.ores"
+if "$cli" generate --kind rpc --root "$tmp/web"; then
+  echo "web repositories do not generate RPC" >&2
+  exit 1
+fi
+mkdir -p "$tmp/api/src/routes/users/[id]" "$tmp/api/src/routes/users/[name]"
+for param in id name; do
+  dir="$tmp/api/src/routes/users/[$param]"
+  printf 'pub fnc show(String request) -> String { return request; }\n' > "$dir/handlers.ores"
+  printf '// @ores-route GET /users/{%s} show\nimport module handlers from "./handlers";\npub fnc show(String request) -> String { return handlers.show(request); }\n' "$param" > "$dir/route.ores"
+done
+if "$cli" generate --kind all --root "$tmp/api"; then
+  echo "ambiguous dynamic path shapes must fail" >&2
+  exit 1
+fi
+if "$cli" deploy --root "$tmp/web" --target oreslang-stack; then
+  echo "uncertified deploy must fail" >&2
+  exit 1
+fi
+if "$cli" build --root "$tmp/web" --backend llvm; then
+  echo "unsupported LLVM must fail" >&2
+  exit 1
+fi
+# Additional adversarial source-tree, permission and idempotency coverage.
+cp -R "$repo/examples/hello-api" "$tmp/inventory-only"
+"$cli" routes --root "$tmp/inventory-only" | grep -F '"kind":"route"'
+test ! -e "$tmp/inventory-only/src/routes/rpc.ores"
+test ! -e "$tmp/inventory-only/src/routes/lambda.ores"
+test ! -e "$tmp/inventory-only/generated"
+
+cp -R "$repo/examples/hello-api" "$tmp/invalid-role"
+printf '[repository]\nrole = "unsafe"\n' > "$tmp/invalid-role/oreslang-stack.toml"
+if "$cli" generate --kind all --root "$tmp/invalid-role"; then
+  echo "invalid repository roles must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/invalid-role/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/duplicate-verb"
+printf '\n// @ores-route GET / greet\n' >> "$tmp/duplicate-verb/src/routes/route.ores"
+if "$cli" generate --kind all --root "$tmp/duplicate-verb"; then
+  echo "duplicate route method must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/duplicate-verb/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/symlink-attack"
+mkdir -p "$tmp/outside"
+ln -s "$tmp/outside" "$tmp/symlink-attack/src/routes/external"
+if "$cli" generate --kind all --root "$tmp/symlink-attack"; then
+  echo "symlinked route directory must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/outside/rpc.ores"
+test ! -e "$tmp/outside/lambda.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/target-link"
+ln -s "$tmp/outside/adapter.ores" "$tmp/target-link/src/routes/rpc.ores"
+if "$cli" generate --kind all --root "$tmp/target-link"; then
+  echo "symlinked generator target must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/outside/adapter.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/orphan-adapter"
+mkdir -p "$tmp/orphan-adapter/src/routes/unused"
+printf '// @generated by oreslang-stack-cli; DO NOT EDIT.\n' > "$tmp/orphan-adapter/src/routes/unused/rpc.ores"
+if "$cli" generate --kind all --check --root "$tmp/orphan-adapter"; then
+  echo "orphan adapter must fail read-only check" >&2
+  exit 1
+fi
+"$cli" generate --kind all --root "$tmp/orphan-adapter"
+test ! -e "$tmp/orphan-adapter/src/routes/unused/rpc.ores"
+sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/routes/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/before.sha"
+"$cli" generate --kind all --root "$tmp/orphan-adapter"
+sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/routes/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/after.sha"
+cmp "$tmp/before.sha" "$tmp/after.sha"
+
+# New-org adoption: exercise every supported role with the real runtime.
+for role in api admin-api web admin-web; do
+  root="$tmp/init-$role"
+  mkdir -p "$root"
+  printf 'keep me\n' > "$root/README.md"
+  "$cli" init --root "$root" --role "$role"
+  grep -Fx "role = \"$role\"" "$root/oreslang-stack.toml"
+  grep -Fx "keep me" "$root/README.md"
+  "$cli" generate --kind all --check --root "$root"
+  "$cli" check --root "$root"
+  "$cli" routes --root "$root" | grep -F "\"role\": \"$role\""
+  if [[ "$role" == api || "$role" == admin-api ]]; then
+    test -f "$root/src/routes/route.ores"
+    test -f "$root/src/routes/handlers.ores"
+    test -f "$root/src/routes/rpc.ores"
+    test -f "$root/src/routes/lambda.ores"
+    test -f "$root/src/routes/graphql.ores"
+    test -f "$root/src/routes/graphql.graphql"
+  else
+    test -f "$root/src/pages/page.ores"
+    test -f "$root/src/pages/lambda.ores"
+    test ! -e "$root/src/pages/rpc.ores"
+  fi
+  if "$cli" init --root "$root" --role "$role"; then
+    echo "second init must refuse existing $role tree" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$tmp/init-unsafe/src"
+printf 'unowned\n' > "$tmp/init-unsafe/src/main.ores"
+if "$cli" init --root "$tmp/init-unsafe" --role api; then
+  echo "init must not overwrite existing source trees" >&2
+  exit 1
+fi
+grep -Fx 'unowned' "$tmp/init-unsafe/src/main.ores"
+
+mkdir -p "$tmp/init-bad-role"
+if "$cli" init --root "$tmp/init-bad-role" --role other; then
+  echo "unrecognized init role must fail" >&2
+  exit 1
+fi
+test ! -e "$tmp/init-bad-role/src"
+
+mkdir -p "$tmp/init-manifest-collision"
+printf 'keep = true\n' > "$tmp/init-manifest-collision/oreslang-stack.toml"
+if "$cli" init --root "$tmp/init-manifest-collision" --role web; then
+  echo "init must not touch foreign manifest" >&2
+  exit 1
+fi
+grep -Fx 'keep = true' "$tmp/init-manifest-collision/oreslang-stack.toml"
+
+mkdir -p "$tmp/init-symlink"
+ln -s "$tmp/api/src" "$tmp/init-symlink/src"
+if "$cli" init --root "$tmp/init-symlink" --role api; then
+  echo "init must refuse symlinked source destination" >&2
+  exit 1
+fi
+
+mkdir -p "$tmp/init-llvm"
+if "$cli" init --root "$tmp/init-llvm" --role api --backend llvm; then
+  echo "native init must fail closed on LLVM" >&2
+  exit 1
+fi
+test ! -e "$tmp/init-llvm/src"
+
+# Infra and Lambdas: source-only candidates, never deployment permissions.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  mkdir -p "$root"
+  "$cli" init --root "$root" --role "$role"
+  "$cli" check --root "$root" | grep -F 'verified'
+  test ! -e "$root/generated/route-manifest.json"
+  test ! -e "$root/src/routes"
+  test ! -e "$root/src/pages"
+  if [[ "$role" == infra ]]; then
+    test -f "$root/src/infra/config.ores"
+  else
+    test -f "$root/src/functions/hello/handler.ores"
+  fi
+  for op in routes generate dev build deploy; do
+    if [[ "$op" == generate ]]; then
+      if "$cli" generate --kind all --root "$root"; then
+        echo "$role must refuse generated route adapters" >&2
+        exit 1
+      fi
+    else
+      if "$cli" "$op" --root "$root"; then
+        echo "$role must refuse $op until adapter certification" >&2
+        exit 1
+      fi
+    fi
+  done
+  candidate="$root/.oreslang-stack-$role.candidate.toml"
+  sed -i.bak 's/deployable = false/deployable = true/' "$candidate"
+  if "$cli" check --root "$root"; then
+    echo "$role candidate policy drift must block checks" >&2
+    exit 1
+  fi
+  mv "$candidate.bak" "$candidate"
+  "$cli" check --root "$root" >/dev/null
+  if "$cli" init --root "$root" --role "$role"; then
+    echo "$role init may not overwrite" >&2
+    exit 1
+  fi
+done
+
+# Candidate profiles must never coexist or acquire a generated-adapter tree.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  other=infra
+  if [[ "$role" == infra ]]; then other=lambdas; fi
+  printf '[candidate]\nrole = "%s"\ndeployable = false\n' "$other" \
+    > "$root/.oreslang-stack-$other.candidate.toml"
+  if "$cli" check --root "$root"; then
+    echo "cross-role candidate manifest must invalidate $role" >&2
+    exit 1
+  fi
+  rm "$root/.oreslang-stack-$other.candidate.toml"
+  "$cli" check --root "$root" >/dev/null
+  mkdir -p "$root/generated"
+  if "$cli" check --root "$root"; then
+    echo "candidate $role must reject generated artifact directory" >&2
+    exit 1
+  fi
+  rmdir "$root/generated"
+  "$cli" check --root "$root" >/dev/null
+done
+
+# Project role parser must reject duplicate section declarations, including
+# duplicate sections that omit a second role. Otherwise governance may be
+# interpreted inconsistently by TOML and permissive line-oriented parsers.
+cp -R "$repo/examples/hello-api" "$tmp/duplicate-section"
+printf '\n[repository]\n# no duplicate role\n' >> "$tmp/duplicate-section/oreslang-stack.toml"
+if "$cli" routes --root "$tmp/duplicate-section"; then
+  echo "duplicate repository section must fail" >&2
+  exit 1
+fi
+if "$cli" generate --kind all --root "$tmp/duplicate-section"; then
+  echo "duplicate repository section must not generate sources" >&2
+  exit 1
+fi
+test ! -e "$tmp/duplicate-section/src/routes/rpc.ores"
+
+# Missing candidate source or symlinked candidate manifest cannot pass check.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  candidate="$root/.oreslang-stack-$role.candidate.toml"
+  mv "$candidate" "$candidate.saved"
+  ln -s "$candidate.saved" "$candidate"
+  if "$cli" check --root "$root"; then
+    echo "candidate symlink must be rejected" >&2
+    exit 1
+  fi
+  rm "$candidate"
+  mv "$candidate.saved" "$candidate"
+done
+
+# Capability argument delimiter cannot escape a project root during init.
+mkdir -p "$tmp/escape,root"
+if "$cli" init --role api --root "$tmp/escape,root"; then
+  echo "comma root must be rejected before source writes" >&2
+  exit 1
+fi
+test ! -e "$tmp/escape,root/src"
+
+echo "native Oreslang generator integration checks passed"
