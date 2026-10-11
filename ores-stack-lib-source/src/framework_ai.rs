@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 use thiserror::Error;
 
 const QUERY_SCHEMA: &str = "ores.stack.framework-ai.query.v1";
@@ -187,7 +187,10 @@ impl FrameworkAiClient {
             return Err(FrameworkAiError::Http(response.status()));
         }
 
-        if response.content_length().is_some_and(|n| n > MAX_RESPONSE_BYTES as u64) {
+        if response
+            .content_length()
+            .is_some_and(|n| n > MAX_RESPONSE_BYTES as u64)
+        {
             return Err(FrameworkAiError::ResponseTooLarge);
         }
 
