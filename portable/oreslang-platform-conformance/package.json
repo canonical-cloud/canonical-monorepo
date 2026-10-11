@@ -1,0 +1,12 @@
+{
+  "name": "@oreslang/platform-conformance",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "inspect": "node bin/conformance.mjs"
+  }
+}
