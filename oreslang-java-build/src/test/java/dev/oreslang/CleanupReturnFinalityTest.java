@@ -50,6 +50,45 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
+    void finallyCannotBreakOutOfAnEnclosingLoop() {
+        rejected("""
+                fnc value(): int {
+                  loop {
+                    try { return 1; }
+                    catch (err) { return 2; }
+                    finally { break; }
+                  }
+                  return 3;
+                }
+                """, "break cannot escape finally");
+    }
+
+    @Test
+    void finallyCannotContinueAnEnclosingLoop() {
+        rejected("""
+                fnc value(): int {
+                  loop {
+                    try { return 1; }
+                    catch (err) { return 2; }
+                    finally { continue; }
+                  }
+                  return 3;
+                }
+                """, "continue cannot escape finally");
+    }
+
+    @Test
+    void finallyMayBreakItsOwnCleanupLoop() {
+        admitted("""
+                fnc value(): int {
+                  try { return 1; }
+                  catch (err) { return 2; }
+                  finally { loop { break; } }
+                }
+                """);
+    }
+
+    @Test
     void deferredRebindingOfTheReturnedLocalIsRejected() {
         rejected("""
                 fnc make(): Box {

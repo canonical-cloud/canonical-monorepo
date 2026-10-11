@@ -47,6 +47,7 @@ public final class ReturnCleanupChecker {
         final Set<Binding> returned = new HashSet<>();
         final Set<Binding> reboundInDefer = new HashSet<>();
         final Set<Binding> scannedDeferredCallbacks = new HashSet<>();
+        int loopsInsideFinally;
     }
 
     public static Ast.Program check(Ast.Program program) {
@@ -120,6 +121,14 @@ public final class ReturnCleanupChecker {
                 expression(deferred.expression(), scope, true, state);
             } else if (stmt instanceof Ast.ExprStmt expression) {
                 expression(expression.expression(), scope, inDefer, state);
+            } else if (stmt instanceof Ast.BreakStmt || stmt instanceof Ast.ContinueStmt) {
+                // A break/continue targeting a loop outside finally would
+                // discard a pending return just like a return in finally.
+                if (inFinally && state.loopsInsideFinally == 0) {
+                    String kind = stmt instanceof Ast.BreakStmt ? "break" : "continue";
+                    throw new IllegalArgumentException(
+                            kind + " cannot escape finally; finally is cleanup-only");
+                }
             } else if (stmt instanceof Ast.BlockStmt block) {
                 statements(block.body(), scope, inFinally, inDefer, trackReturns, state);
             } else if (stmt instanceof Ast.IfStmt conditional) {
@@ -148,19 +157,25 @@ public final class ReturnCleanupChecker {
                 Scope caught = new Scope(scope);
                 caught.define(attempted.errorName());
                 statements(attempted.catchBody(), caught, inFinally, inDefer, trackReturns, state);
-                statements(attempted.finallyBody(), scope, true, inDefer, trackReturns, state);
+                int enclosingLoops = state.loopsInsideFinally;
+                state.loopsInsideFinally = 0;
+                try {
+                    statements(attempted.finallyBody(), scope, true, inDefer, trackReturns, state);
+                } finally {
+                    state.loopsInsideFinally = enclosingLoops;
+                }
             } else if (stmt instanceof Ast.ForOfStmt loop) {
                 expression(loop.iterable(), scope, inDefer, state);
                 Scope iteration = new Scope(scope);
                 iteration.define(loop.bindingName());
-                statements(loop.body(), iteration, inFinally, inDefer, trackReturns, state);
+                loopBody(loop.body(), iteration, inFinally, inDefer, trackReturns, state);
             } else if (stmt instanceof Ast.ForOfDestructureStmt loop) {
                 expression(loop.iterable(), scope, inDefer, state);
                 Scope iteration = new Scope(scope);
                 for (Ast.DestructureBinding binding : loop.bindings()) {
                     if (!binding.isDiscard()) iteration.define(binding.name());
                 }
-                statements(loop.body(), iteration, inFinally, inDefer, trackReturns, state);
+                loopBody(loop.body(), iteration, inFinally, inDefer, trackReturns, state);
             } else if (stmt instanceof Ast.ForStmt loop) {
                 Scope loopScope = new Scope(scope);
                 if (loop.initializer() instanceof Ast.BindingStmt binding) {
@@ -173,9 +188,9 @@ public final class ReturnCleanupChecker {
                 }
                 expression(loop.condition(), loopScope, inDefer, state);
                 expression(loop.update(), loopScope, inDefer, state);
-                statements(loop.body(), loopScope, inFinally, inDefer, trackReturns, state);
+                loopBody(loop.body(), loopScope, inFinally, inDefer, trackReturns, state);
             } else if (stmt instanceof Ast.LoopStmt loop) {
-                statements(loop.body(), scope, inFinally, inDefer, trackReturns, state);
+                loopBody(loop.body(), scope, inFinally, inDefer, trackReturns, state);
             } else if (stmt instanceof Ast.SelectStmt select) {
                 for (Ast.SelectArm arm : select.arms()) {
                     expression(arm.channel(), scope, inDefer, state);
@@ -185,6 +200,17 @@ public final class ReturnCleanupChecker {
                     statements(arm.body(), armScope, inFinally, inDefer, trackReturns, state);
                 }
             }
+        }
+    }
+
+    private static void loopBody(List<Ast.Stmt> body, Scope scope,
+                                 boolean inFinally, boolean inDefer,
+                                 boolean trackReturns, State state) {
+        if (inFinally) state.loopsInsideFinally++;
+        try {
+            statements(body, scope, inFinally, inDefer, trackReturns, state);
+        } finally {
+            if (inFinally) state.loopsInsideFinally--;
         }
     }
 
