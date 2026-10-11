@@ -64,12 +64,147 @@ class DiagnosticProof(unittest.TestCase):
                 result = run.run_case(case, "llvm", ["fake", "{source}"], "", 3)
                 self.assertEqual("fail", result["status"])
 
+    def test_graal_native_result_requires_real_execution_and_exact_exit(self):
+        case = {"id": "native.add", "kind": "native_exit",
+                "source": "fixtures/add.ores", "expected_exit": 42}
+        check = CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        executed = CompletedProcess(args=[], returncode=42, stdout="", stderr="")
+        with patch.object(run.subprocess, "run", side_effect=[check, executed]) as call:
+            result = run.run_case(case, "graal", ["check", "{source}"], "", 3,
+                                  ["guest", "{source}"])
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(result["observed_exit"], 42)
+        self.assertEqual(call.call_count, 2)
+
+        # No guest command is not silently reported as a passing result.
+        with patch.object(run.subprocess, "run", return_value=check):
+            missing = run.run_case(case, "graal", ["check", "{source}"], "", 3)
+        self.assertEqual(missing["status"], "fail")
+
+        for status, stdout, stderr in [(0, "", ""), (43, "", ""),
+                                       (42, "unexpected", ""), (42, "", "exception")]:
+            with self.subTest(status=status, stdout=stdout, stderr=stderr):
+                wrong = CompletedProcess(args=[], returncode=status,
+                                         stdout=stdout, stderr=stderr)
+                with patch.object(run.subprocess, "run", side_effect=[check, wrong]):
+                    result = run.run_case(case, "graal", ["check", "{source}"], "", 3,
+                                          ["guest", "{source}"])
+                self.assertEqual(result["status"], "fail")
+
+        # A failing compiler check must not run the guest process.
+        reject = CompletedProcess(args=[], returncode=1, stdout="", stderr="type error")
+        with patch.object(run.subprocess, "run", return_value=reject) as mock_run:
+            result = run.run_case(case, "graal", ["check", "{source}"], "", 3,
+                                  ["guest", "{source}"])
+        self.assertEqual(result["status"], "fail")
+        self.assertEqual(mock_run.call_count, 1)
+
     def test_native_test_does_not_skip_missing_clang(self):
         case = {"id":"native.add","kind":"native_exit","source":"fixtures/add.ores","expected_exit":42}
         with patch.object(run.subprocess, "run", return_value=CompletedProcess(
                 args=[], returncode=0, stdout="; ModuleID = 'foo'\n", stderr="")):
             result = run.run_case(case, "llvm", ["fake", "{source}"], "", 3)
             self.assertEqual("fail", result["status"])
+
+
+class ComparatorParityProof(unittest.TestCase):
+    """The incremental conformance comparison must never certify pending parity."""
+
+    def setUp(self):
+        self.suite, self.digest = run.validate_suite()
+        self.sha = {"llvm": "a" * 40, "graal": "b" * 40}
+        self.reports = {}
+        for backend in ("llvm", "graal"):
+            results = []
+            for case in self.suite["cases"]:
+                if case["backends"][backend] == "pending":
+                    record = {"id": case["id"], "status": "pending",
+                              "detail": case["pending_reason"]}
+                elif case["kind"] == "diagnostic":
+                    record = {"id": case["id"], "status": "pass",
+                              "diagnostic_class": case["diagnostic_class"], "detail": ""}
+                else:
+                    record = {"id": case["id"], "status": "pass",
+                              "observed_exit": case["expected_exit"], "detail": ""}
+                results.append(record)
+            self.reports[backend] = {
+                "schema_version": "1.1.0", "backend": backend,
+                "suite_sha256": self.digest, "source_revision": self.sha[backend],
+                "results": results,
+            }
+
+    def compare(self, *, strict=False, revisions=None, suite=None):
+        from contextlib import redirect_stdout, redirect_stderr
+        import io
+        import compare
+        selected = suite or self.suite
+        ids = {case["id"] for case in selected["cases"]}
+        reports = {backend: dict(report, results=[
+            record for record in report["results"] if record["id"] in ids])
+            for backend, report in self.reports.items()}
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()):
+            status = compare.compare(selected, self.digest,
+                                     reports["llvm"], reports["graal"],
+                                     require_suite_parity=strict, expected_revisions=revisions)
+        return status, out.getvalue()
+
+    def test_incremental_mode_is_explicitly_incomplete(self):
+        status, summary = self.compare()
+        self.assertEqual(status, 0)
+        self.assertIn("SUITE_COMPLETE=no", summary)
+        self.assertIn("BACKEND_PENDING=", summary)
+
+    def test_strict_gate_rejects_pending_cases(self):
+        status, summary = self.compare(strict=True, revisions=self.sha)
+        self.assertEqual(status, 1)
+        self.assertIn("SUITE_COMPLETE=no", summary)
+
+    def test_strict_gate_demands_pinned_heads(self):
+        with self.assertRaisesRegex(ValueError, "requires pinned"):
+            self.compare(strict=True)
+
+    def test_stale_source_sha_rejected(self):
+        revisions = dict(self.sha, llvm="c" * 40)
+        with self.assertRaisesRegex(ValueError, "stale llvm report"):
+            self.compare(revisions=revisions)
+
+    def test_pending_cannot_smuggle_runtime_or_diagnostic_evidence(self):
+        # A synthetic pending case keeps the test useful as support expands.
+        # No production backend is required to remain permanently pending.
+        case = self.suite["cases"][0]
+        case["backends"]["graal"] = "pending"
+        case["pending_reason"] = "synthetic comparator regression only"
+        record = self.reports["graal"]["results"][0]
+        record.clear()
+        record.update({"id": case["id"], "status": "pending",
+                       "detail": case["pending_reason"]})
+        self.assertEqual(self.compare()[0], 0)
+        for evidence in ({"observed_exit": 0}, {"diagnostic_class": "unknown_name"}):
+            record.update(evidence)
+            self.assertEqual(self.compare()[0], 1)
+            for key in evidence:
+                del record[key]
+
+    def test_required_diagnostic_cannot_smuggle_native_exit(self):
+        record = next(item for item in self.reports["llvm"]["results"]
+                      if item.get("diagnostic_class"))
+        record["observed_exit"] = 0
+        self.assertEqual(self.compare()[0], 1)
+
+    def test_required_native_cannot_smuggle_diagnostic(self):
+        record = next(item for item in self.reports["llvm"]["results"]
+                      if "observed_exit" in item)
+        record["diagnostic_class"] = "unknown_name"
+        self.assertEqual(self.compare()[0], 1)
+
+    def test_strict_gate_can_verify_fully_required_subset_only(self):
+        # A tiny suite passing its fixtures still does NOT prove language parity.
+        suite = {"cases": [case for case in self.suite["cases"]
+                          if all(s == "required" for s in case["backends"].values())]}
+        self.assertTrue(suite["cases"])
+        status, summary = self.compare(strict=True, revisions=self.sha, suite=suite)
+        self.assertEqual(status, 0)
+        self.assertIn("SUITE_COMPLETE=yes", summary)
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,9 +9,8 @@
       "expected_exit": 42,
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Graal native main-result adapter not yet implemented."
+        "graal": "required"
+      }
     },
     {
       "id": "native.precedence",
@@ -21,9 +20,8 @@
       "expected_exit": 40,
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Graal native main-result adapter not yet implemented."
+        "graal": "required"
+      }
     },
     {
       "id": "native.forward",
@@ -33,9 +31,8 @@
       "expected_exit": 42,
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Graal native main-result adapter not yet implemented."
+        "graal": "required"
+      }
     },
     {
       "id": "native.underscores",
@@ -45,9 +42,8 @@
       "expected_exit": 42,
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Graal native main-result adapter not yet implemented."
+        "graal": "required"
+      }
     },
     {
       "id": "native.unary",
@@ -57,9 +53,8 @@
       "expected_exit": 42,
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Graal native main-result adapter not yet implemented."
+        "graal": "required"
+      }
     },
     {
       "id": "diagnostic.unknown",
@@ -102,9 +97,8 @@
       "diagnostic_class": "integer_overflow",
       "backends": {
         "llvm": "required",
-        "graal": "pending"
-      },
-      "pending_reason": "Java numeric type width and overflow parity need specification and verification."
+        "graal": "required"
+      }
     },
     {
       "id": "diagnostic.comment",

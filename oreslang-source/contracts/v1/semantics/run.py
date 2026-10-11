@@ -91,7 +91,7 @@ def check_diagnostic(returncode, stdout, stderr, category, backend):
         return False
     return bool(re.search(CLASSES[backend][category], stderr, flags=re.IGNORECASE))
 
-def run_case(case, backend, argv, clang, timeout):
+def run_case(case, backend, argv, clang, timeout, run_argv=None):
     source = str((ROOT / case["source"]).resolve())
     command = [piece.replace("{source}", source) for piece in argv]
     try:
@@ -107,6 +107,24 @@ def run_case(case, backend, argv, clang, timeout):
         if compiled.returncode != 0:
             return {"id": case["id"], "status": "fail",
                     "detail": f"compiler exit={compiled.returncode}: {compiled.stderr[:450]}"}
+        if backend == "graal":
+            # The Java/Graal launcher runs guest main(): int as the process exit
+            # status, so no LLVM IR or Clang is involved. The compiler check
+            # above is still mandatory: runtime crashes cannot satisfy a
+            # negative diagnostic and a missing executable cannot be a pass.
+            if run_argv is None:
+                return {"id": case["id"], "status": "fail",
+                        "detail": "Graal source-execution command not configured"}
+            guest_command = [part.replace("{source}", source) for part in run_argv]
+            guest = subprocess.run(guest_command, capture_output=True, text=True,
+                                   check=False, timeout=timeout)
+            expected = case["expected_exit"]
+            passed = guest.returncode == expected and not guest.stdout and not guest.stderr
+            return {"id": case["id"], "status": "pass" if passed else "fail",
+                    "observed_exit": guest.returncode,
+                    "detail": "" if passed else
+                        f"expected exit={expected}; actual={guest.returncode}; "
+                        f"stdout={guest.stdout[:160]!r}; stderr={guest.stderr[:160]!r}"}
         if backend != "llvm" or not compiled.stdout.startswith("; ModuleID"):
             return {"id": case["id"], "status": "fail",
                     "detail": "native result adapter unavailable or compiler did not emit LLVM IR"}
@@ -135,6 +153,7 @@ def main():
     p.add_argument("--backend", choices=["llvm", "graal"])
     p.add_argument("--command", help="shell-free argv with one {source} placeholder")
     p.add_argument("--clang", default="")
+    p.add_argument("--run-command", help="Graal OresMain guest process argv with one {source}")
     p.add_argument("--revision", help="40-character Git commit SHA for the compiled backend")
     p.add_argument("--timeout", type=int, default=30)
     p.add_argument("--report", type=Path)
@@ -152,13 +171,16 @@ def main():
     if not 1 <= args.timeout <= 300:
         p.error("--timeout must be 1..300 seconds")
     argv = validate_command(args.command)
+    if args.run_command and args.backend != "graal":
+        p.error("--run-command is only applicable to the graal backend")
+    run_argv = validate_command(args.run_command) if args.run_command else None
     results = []
     for case in suite["cases"]:
         if case["backends"][args.backend] == "pending":
             result = {"id": case["id"], "status": "pending",
                       "detail": case["pending_reason"]}
         else:
-            result = run_case(case, args.backend, argv, args.clang, args.timeout)
+            result = run_case(case, args.backend, argv, args.clang, args.timeout, run_argv)
         results.append(result)
         print(f"{result['status'].upper()} {case['id']} ({args.backend})"
               + (f": {result.get('detail','')}" if result["status"] == "fail" else ""))
