@@ -1,0 +1,47 @@
+name: Zed infra PR113 exact-head external CI
+on:
+  push:
+    branches: [ci/zed-infra113-fleet-proof-20261011]
+permissions:
+  contents: read
+jobs:
+  source-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout public PR source without cross-org credentials
+        uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-infra
+          ref: 52d5ee32e30e590c3b1090c94572c12822c186d8
+          persist-credentials: false
+      - name: Assert exact source head
+        run: test "$(git rev-parse HEAD)" = "52d5ee32e30e590c3b1090c94572c12822c186d8"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Broker security regressions
+        run: |
+          set -euo pipefail
+          node --check workers/shared/private-source-broker.js
+          node --test workers/shared/private-source-broker.test.js
+  worker-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: zed-pkg/zed-infra
+          ref: 52d5ee32e30e590c3b1090c94572c12822c186d8
+          persist-credentials: false
+      - name: Assert source SHA and manifest immutability
+        run: test "$(git rev-parse HEAD)" = "52d5ee32e30e590c3b1090c94572c12822c186d8"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Install, audit, and run full Worker tests
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --prefix workers
+          npm audit --audit-level=low --prefix workers
+          npm test --prefix workers
