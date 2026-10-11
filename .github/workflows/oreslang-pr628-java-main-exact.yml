@@ -1,0 +1,31 @@
+name: PR628 exact production source GraalVM proof
+on:
+  push:
+    branches: [ci/oreslang-pr628-java-main-exact-20261011]
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify Java source tree identity
+        run: |
+          test "$(git rev-parse HEAD:oreslang-java-build/src/main)" = "c0c4617cb60601af918d4d08fdbcbc0b309965b7"
+          test "$(git rev-parse HEAD:oreslang-java-build/src/test/java/dev/oreslang/CleanupReturnFinalityTest.java)" = "e2d894c4d3c105669875192ab127ed3d29a6d0c4"
+          echo EXACT_PRODUCTION_SOURCE_AND_REGRESSION_SHA_MATCH
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          version: '25.3'
+          java-version: '25'
+          distribution: graalvm
+          cache: maven
+      - name: Verify production build
+        working-directory: oreslang-java-build
+        run: mvn -B -ntp -DskipTests package
+      - name: Execute cleanup finality regression
+        working-directory: oreslang-java-build
+        run: mvn -B -ntp -Dtest=CleanupReturnFinalityTest test

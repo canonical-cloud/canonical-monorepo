@@ -700,6 +700,17 @@ public final class Parser {
             if (mods.isStatic && !explicitFnc) {
                 consume(FNC, "static actor functions must be declared with 'static fnc'");
             }
+            // Do not silently admit methods that look like checked supervisor
+            // handlers before typed exhaustiveness and CONTROL dispatch exist.
+            if (check(IDENT) && (peek().lexeme().equals("on_throw")
+                    || peek().lexeme().equals("on_throws")
+                    || peek().lexeme().equals("on_raise")
+                    || peek().lexeme().equals("on_panic")
+                    || peek().lexeme().equals("on_recover"))) {
+                throw error(peek(), "actor supervision on_* handlers require "
+                        + "compiler-enforced exhaustiveness and CONTROL dispatch; "
+                        + "source handlers are not yet enabled");
+            }
             methods.add(parseMethod(annotations, mods));
         }
 
@@ -1490,6 +1501,13 @@ public final class Parser {
     }
 
     private Ast.Stmt parseStatement() {
+        // Keep these distinct from ordinary calls/identifiers. Exception
+        // effect checking, typed recovery and actor CONTROL delivery have
+        // not yet been lowered in the Java/Graal production compiler.
+        if (check(THROW) || check(RAISE) || check(PANIC) || check(RECOVER)) {
+            throw error(peek(), "typed exceptional effect '" + peek().lexeme()
+                    + "' requires checked exception and supervision lowering; source effect is not yet enabled");
+        }
         if (looksLikeStaticSelectStatement()) return parseStaticSelectStatement();
         // "cb" is reserved for callback-bearing writech; it is not the
         // no-result/static-select marker. "do" is the canonical spelling.

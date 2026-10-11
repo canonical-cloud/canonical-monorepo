@@ -1744,7 +1744,9 @@ public final class OresEvalRootNode extends RootNode {
 
             evalSuspendableExpr(
                     task,
-                    defer,
+                    defer instanceof Ast.LambdaExpr
+                            ? new Ast.CallExpr(defer, List.of())
+                            : defer,
                     env,
                     (ignored, ignoredValue, failure) -> {
                         if (failure != null) {
@@ -4601,7 +4603,15 @@ public final class OresEvalRootNode extends RootNode {
             } finally {
                 boolean deferredFailure = false;
                 try {
-                    while (!deferred.isEmpty()) eval(deferred.pop(), env);
+                    while (!deferred.isEmpty()) {
+                        Ast.Expr cleanup = deferred.pop();
+                        // A deferred zero-argument lambda is a cleanup callback,
+                        // not an unused function value. Direct calls and other
+                        // deferred expressions keep their existing semantics.
+                        eval(cleanup instanceof Ast.LambdaExpr
+                                ? new Ast.CallExpr(cleanup, List.of())
+                                : cleanup, env);
+                    }
                 } catch (RuntimeException | Error failure) {
                     deferredFailure = true;
                     throw failure;
