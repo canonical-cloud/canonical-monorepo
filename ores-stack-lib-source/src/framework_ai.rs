@@ -1,10 +1,12 @@
 use reqwest::StatusCode;
+use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 const QUERY_SCHEMA: &str = "ores.stack.framework-ai.query.v1";
 const ANSWER_SCHEMA: &str = "ores.stack.framework-ai.answer.v1";
+const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReleaseRef {
@@ -137,6 +139,14 @@ pub enum FrameworkAiError {
     WeakEvidence { score: f32, minimum: f32 },
     #[error("framework AI returned malformed sha256 digest in {field}")]
     InvalidDigest { field: &'static str },
+    #[error("framework AI evidence score must be finite and in the range 0..=1")]
+    InvalidScore,
+    #[error("framework AI evidence has an invalid source reference or line range")]
+    InvalidEvidence,
+    #[error("framework AI minimum retrieval score must be finite and in the range 0..=1")]
+    InvalidPolicy,
+    #[error("framework AI response exceeds the bounded maximum size")]
+    ResponseTooLarge,
 }
 
 #[derive(Clone)]
@@ -148,10 +158,13 @@ pub struct FrameworkAiClient {
 impl FrameworkAiClient {
     #[must_use]
     pub fn new(policy: FrameworkAiPolicy) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            policy,
-        }
+        // Avoid forwarding prompts and manifests to unexpected redirect locations.
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(15))
+            .build()
+            .expect("framework AI HTTP client with fixed transport policy");
+        Self { http, policy }
     }
 
     pub async fn query(
@@ -174,7 +187,21 @@ impl FrameworkAiClient {
             return Err(FrameworkAiError::Http(response.status()));
         }
 
-        let answer = response.json::<FrameworkAiAnswer>().await?;
+        if response.content_length().is_some_and(|n| n > MAX_RESPONSE_BYTES as u64) {
+            return Err(FrameworkAiError::ResponseTooLarge);
+        }
+
+        // Enforce the bound on actual received bytes, not just Content-Length.
+        let mut response = response;
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if chunk.len() > MAX_RESPONSE_BYTES.saturating_sub(body.len()) {
+                return Err(FrameworkAiError::ResponseTooLarge);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let answer: FrameworkAiAnswer = serde_json::from_slice(&body)
+            .map_err(|_| FrameworkAiError::Schema("invalid answer JSON".to_owned()))?;
         self.verify_answer(&answer)?;
         Ok(answer)
     }
@@ -193,11 +220,27 @@ impl FrameworkAiClient {
             });
         }
 
+        if !self.policy.minimum_retrieval_score.is_finite()
+            || !(0.0..=1.0).contains(&self.policy.minimum_retrieval_score)
+        {
+            return Err(FrameworkAiError::InvalidPolicy);
+        }
         if self.policy.source_citations_required && answer.evidence.is_empty() {
             return Err(FrameworkAiError::MissingEvidence);
         }
 
         for evidence in &answer.evidence {
+            if !evidence.score.is_finite() || !(0.0..=1.0).contains(&evidence.score) {
+                return Err(FrameworkAiError::InvalidScore);
+            }
+            if evidence.repo.trim().is_empty()
+                || evidence.git_ref.trim().is_empty()
+                || evidence.path.trim().is_empty()
+                || evidence.start_line == 0
+                || evidence.end_line < evidence.start_line
+            {
+                return Err(FrameworkAiError::InvalidEvidence);
+            }
             if evidence.score < self.policy.minimum_retrieval_score {
                 return Err(FrameworkAiError::WeakEvidence {
                     score: evidence.score,
@@ -309,6 +352,60 @@ mod tests {
             client.verify_answer(&value),
             Err(FrameworkAiError::ReleaseMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn rejects_non_finite_and_out_of_range_evidence_scores() {
+        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict(
+            "http://127.0.0.1:9127",
+            release(),
+        ));
+        for score in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.1, 1.01] {
+            let mut value = answer();
+            value.evidence[0].score = score;
+            assert!(matches!(
+                client.verify_answer(&value),
+                Err(FrameworkAiError::InvalidScore)
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_evidence_locations() {
+        let client = FrameworkAiClient::new(FrameworkAiPolicy::strict(
+            "http://127.0.0.1:9127",
+            release(),
+        ));
+        let mut bad = answer();
+        bad.evidence[0].start_line = 0;
+        assert!(matches!(
+            client.verify_answer(&bad),
+            Err(FrameworkAiError::InvalidEvidence)
+        ));
+        bad.evidence[0].start_line = 21;
+        assert!(matches!(
+            client.verify_answer(&bad),
+            Err(FrameworkAiError::InvalidEvidence)
+        ));
+        bad.evidence[0].start_line = 1;
+        bad.evidence[0].repo.clear();
+        assert!(matches!(
+            client.verify_answer(&bad),
+            Err(FrameworkAiError::InvalidEvidence)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_policy_threshold() {
+        for score in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, -0.1, 1.01] {
+            let mut policy = FrameworkAiPolicy::strict("http://127.0.0.1:9127", release());
+            policy.minimum_retrieval_score = score;
+            let client = FrameworkAiClient::new(policy);
+            assert!(matches!(
+                client.verify_answer(&answer()),
+                Err(FrameworkAiError::InvalidPolicy)
+            ));
+        }
     }
 
     #[test]
