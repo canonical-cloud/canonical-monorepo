@@ -1,5 +1,7 @@
 //! Real loopback HTTP boundary checks (the in-memory answer verifier is insufficient).
-use ores_stack_lib_core::{FrameworkAiClient, FrameworkAiError, FrameworkAiPolicy, FrameworkAiQuery, ReleaseRef};
+use ores_stack_lib_core::{
+    FrameworkAiClient, FrameworkAiError, FrameworkAiPolicy, FrameworkAiQuery, ReleaseRef,
+};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
@@ -12,7 +14,10 @@ fn release() -> ReleaseRef {
     }
 }
 
-fn run_once(response: Vec<u8>, case: impl FnOnce(FrameworkAiClient) -> Result<(), FrameworkAiError>) {
+fn run_once(
+    response: Vec<u8>,
+    case: impl FnOnce(FrameworkAiClient) -> Result<(), FrameworkAiError>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback listener");
     let endpoint = format!("http://{}", listener.local_addr().expect("local address"));
     let server = thread::spawn(move || {
@@ -37,7 +42,9 @@ fn query(client: FrameworkAiClient) -> Result<FrameworkAiError, FrameworkAiError
         .build()
         .expect("single-threaded Tokio executor");
     match runtime.block_on(client.query(FrameworkAiQuery::new(release(), "explain policy"))) {
-        Ok(_) => Err(FrameworkAiError::Schema("request unexpectedly succeeded".into())),
+        Ok(_) => Err(FrameworkAiError::Schema(
+            "request unexpectedly succeeded".into(),
+        )),
         Err(err) => Ok(err),
     }
 }
