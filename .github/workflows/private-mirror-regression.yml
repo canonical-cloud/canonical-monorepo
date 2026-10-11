@@ -1,0 +1,26 @@
+name: Private exact-tree verifier regression
+on:
+  push:
+    branches: [ci/oreslang-platform-mirror-check-20261011]
+    paths: [private-mirror-test-ready-20261011.txt]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Confirm exact platform conformance source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:platform-source)" = "68c83ea2e88fda4894b96675282cac8a099e9b67"
+      - name: Run exact-tree mirror verifier regressions
+        working-directory: platform-source
+        run: node --test tests/private-mirror.test.mjs
+      - name: Run existing harness regressions
+        working-directory: platform-source
+        run: npm test
