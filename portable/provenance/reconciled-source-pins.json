@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "description": "Exact-reconciled Browser and Wasm JavaScript test inputs copied from source Git blobs",
+  "sources": [
+    {
+      "repository": "ores-truffle-oreslang/oreslang-browser",
+      "headCommit": "68528b7c060c076fb5da6e5c69b648eb40abdcd4",
+      "headTree": "2a711b525e761cc9409b605702e41b6f37928c7f",
+      "count": 19
+    },
+    {
+      "repository": "ores-truffle-oreslang/oreslang-wasm",
+      "headCommit": "0862b991117bc1d90681d29ca3c94d2869b76de9",
+      "headTree": "3adb71ee479a37b218476df090c1cfc43ad4a9e2",
+      "count": 8
+    }
+  ],
+  "files": [
+    {
+      "path": "portable/browser/package.json",
+      "blobSha": "06b3975d24e118bc35e1e39c387e4d58ceadc039"
+    },
+    {
+      "path": "portable/browser/src/abi.mjs",
+      "blobSha": "26637301a460a573edf38c5fdc00f18bf807085a"
+    },
+    {
+      "path": "portable/browser/src/actor-message-worker.mjs",
+      "blobSha": "d05f98aaf2d8d87190664bac99c73a9078060984"
+    },
+    {
+      "path": "portable/browser/src/actor-transport.mjs",
+      "blobSha": "3be456e5511bee928a5e013f5fe654c666860f51"
+    },
+    {
+      "path": "portable/browser/src/artifact.mjs",
+      "blobSha": "4bbb4b5c3b2d44cf5a310aecf364cf32d6423089"
+    },
+    {
+      "path": "portable/browser/src/guest-worker.mjs",
+      "blobSha": "b83bce8fd1a7da44cdc23b89865666b7829de8f4"
+    },
+    {
+      "path": "portable/browser/src/inspect.mjs",
+      "blobSha": "36eb0f3dc1b948a74d5a4e3691b19dfc6192650b"
+    },
+    {
+      "path": "portable/browser/src/loader.mjs",
+      "blobSha": "d006c346ea05e9c347af8452eb2c9e2320090efc"
+    },
+    {
+      "path": "portable/browser/src/messagepack-v2.mjs",
+      "blobSha": "6f12cfc99a2bb375a600123e339fe8e6a72a83fb"
+    },
+    {
+      "path": "portable/browser/src/worker-host.mjs",
+      "blobSha": "d235d26f4a5adc92dbec1d4b93950a8daf66be83"
+    },
+    {
+      "path": "portable/browser/tests/abi.test.mjs",
+      "blobSha": "8ac8ada1a62a6b1c0ae783afffc40d0d32ed6877"
+    },
+    {
+      "path": "portable/browser/tests/actor-transport.test.mjs",
+      "blobSha": "5a8250e418291ee927dbdafe0c1815be4118ffe0"
+    },
+    {
+      "path": "portable/browser/tests/artifact.test.mjs",
+      "blobSha": "c79afb79ff98945a6d5908d051b8118e4e4af9d6"
+    },
+    {
+      "path": "portable/browser/tests/cross-repo.test.mjs",
+      "blobSha": "96fe1f04c4415cf8e0aa423c03f6fa649c0a51a4"
+    },
+    {
+      "path": "portable/browser/tests/fixtures/actor-node-worker-shim.mjs",
+      "blobSha": "f19e28cb5817471d4987b89dc680fb4b6d804e0f"
+    },
+    {
+      "path": "portable/browser/tests/fixtures/node-worker-shim.mjs",
+      "blobSha": "2e23bdae3feb6323b85db49c7b91e6f5cc4a5317"
+    },
+    {
+      "path": "portable/browser/tests/loader.test.mjs",
+      "blobSha": "4afc871c5de68da08640841fded5db2acf90ccf7"
+    },
+    {
+      "path": "portable/browser/tests/manifest-snapshot.test.mjs",
+      "blobSha": "dfa2fdd818c2dc0d132f3e6cf4f7fca32e4f7d95"
+    },
+    {
+      "path": "portable/browser/tests/worker-host.test.mjs",
+      "blobSha": "86111fc418bc35439f247ed96877ce9ba46afdf4"
+    },
+    {
+      "path": "portable/wasm/scripts/compile-ores.mjs",
+      "blobSha": "d04fe8c557c6882194a0c4679bf7ddaf03438946"
+    },
+    {
+      "path": "portable/wasm/tests/bridge.test.mjs",
+      "blobSha": "d7a4d2f832d047873dc9aa7c9a3e4f1ccf67561d"
+    },
+    {
+      "path": "portable/wasm/tests/compiler-pin.test.mjs",
+      "blobSha": "d27bd226990fba8b17da288fbceef3674bfc0c95"
+    },
+    {
+      "path": "portable/wasm/tests/duplicate-cli.test.mjs",
+      "blobSha": "a7349a8ce45291f4ee875b330d15e511fb1ad9ac"
+    },
+    {
+      "path": "portable/wasm/tests/messagepack-v2.test.mjs",
+      "blobSha": "277a82d180e3a85ad0c76adcff3cfc31befdc5cf"
+    },
+    {
+      "path": "portable/wasm/tests/publication.test.mjs",
+      "blobSha": "3160dda7b2a953890b3c040013714d23b59f6b49"
+    },
+    {
+      "path": "portable/wasm/tests/source-snapshot.test.mjs",
+      "blobSha": "e115659aa11b6827a5c974b40a48002352fa0f14"
+    },
+    {
+      "path": "portable/wasm/transport/messagepack-v2.mjs",
+      "blobSha": "6f12cfc99a2bb375a600123e339fe8e6a72a83fb"
+    }
+  ]
+}
