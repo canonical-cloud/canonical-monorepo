@@ -1,0 +1,39 @@
+name: Oreslang reconciled browser and wasm portable release
+on:
+  push:
+    branches: [ci/oreslang-portable-release-20261011]
+permissions:
+  contents: read
+jobs:
+  exact-reconciled-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact 27 origin Git blobs
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const proof=JSON.parse(fs.readFileSync('portable/provenance/reconciled-source-pins.json','utf8'));
+          if(proof.files.length!==27||proof.sources.length!==2)throw Error('incomplete source manifest');
+          for(const file of proof.files) {
+            const actual=execFileSync('git',['hash-object',file.path],{encoding:'utf8'}).trim();
+            if(actual!==file.blobSha)throw Error('source mismatch: '+file.path);
+          }
+          console.log('RECONCILED_GIT_BLOBS_VERIFIED 27');
+          NODE
+      - name: Check native Clang and LLD available for Wasm bridge
+        run: |
+          clang --version | head -n 1
+          ld.lld --version
+      - name: Run exact Browser ABI, manifest and isolated Worker tests
+        run: |
+          node --test             portable/browser/tests/abi.test.mjs             portable/browser/tests/actor-transport.test.mjs             portable/browser/tests/artifact.test.mjs             portable/browser/tests/loader.test.mjs             portable/browser/tests/manifest-snapshot.test.mjs             portable/browser/tests/worker-host.test.mjs
+      - name: Run exact Wasm MessagePack, compiler snapshot and publication tests
+        run: |
+          node --test             portable/wasm/tests/duplicate-cli.test.mjs             portable/wasm/tests/messagepack-v2.test.mjs             portable/wasm/tests/source-snapshot.test.mjs             portable/wasm/tests/publication.test.mjs             portable/wasm/tests/compiler-pin.test.mjs             portable/wasm/tests/bridge.test.mjs
