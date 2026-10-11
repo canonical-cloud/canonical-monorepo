@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "int-arithmetic",
+      "file": "int-arithmetic.ores",
+      "expect": "accept",
+      "backends": [
+        "java",
+        "llvm"
+      ]
+    },
+    {
+      "id": "unresolved-identifier",
+      "file": "unresolved-identifier.ores",
+      "expect": "reject",
+      "diagnostic": "nonexistent_symbol",
+      "backends": [
+        "java",
+        "llvm"
+      ]
+    }
+  ]
+}

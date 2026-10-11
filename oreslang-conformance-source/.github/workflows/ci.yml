@@ -1,0 +1,21 @@
+name: Conformance harness unit checks (not compiler parity)
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Confirm mandatory real compiler gate cannot pass unconfigured
+        run: |
+          if node bin/conformance.mjs --backend=java --require; then
+            echo "ERROR: unconfigured compiler unexpectedly counted as passing" >&2
+            exit 1
+          fi
