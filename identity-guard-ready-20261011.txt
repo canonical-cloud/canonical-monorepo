@@ -1,0 +1,2 @@
+ORES Stack documentation guards source revisions 8ec3fd399410d95047f4ae3aa889cd2bdcc29295 and 5c394aad0cc5b881c193fa1e942a52b609c418d1
+All seven blobs checked before execution.
