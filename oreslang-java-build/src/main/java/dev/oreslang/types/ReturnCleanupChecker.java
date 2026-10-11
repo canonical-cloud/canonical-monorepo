@@ -126,8 +126,14 @@ public final class ReturnCleanupChecker {
             } else if (stmt instanceof Ast.YieldStmt yielded) {
                 expression(yielded.value(), scope, inDefer, state);
             } else if (stmt instanceof Ast.DeferStmt deferred) {
-                // Deferred expressions execute on exit, not at registration.
-                expression(deferred.expression(), scope, true, state);
+                // A direct deferred lambda runs on scope exit. Creating other
+                // nested lambdas inside it does not execute their bodies.
+                if (deferred.expression() instanceof Ast.LambdaExpr lambda) {
+                    expression(lambda, scope, false, state);
+                    deferredLambda(lambda, scope, state);
+                } else {
+                    expression(deferred.expression(), scope, true, state);
+                }
             } else if (stmt instanceof Ast.ExprStmt expression) {
                 expression(expression.expression(), scope, inDefer, state);
             } else if (stmt instanceof Ast.BreakStmt || stmt instanceof Ast.ContinueStmt) {
@@ -231,6 +237,16 @@ public final class ReturnCleanupChecker {
         else if (pattern instanceof Ast.ConstructorPattern p) p.arguments().forEach(e -> bindPattern(e, scope));
     }
 
+    private static void deferredLambda(Ast.LambdaExpr lambda, Scope definingScope, State state) {
+        Scope captured = new Scope(definingScope);
+        for (Ast.Param param : lambda.parameters()) captured.define(param.name());
+        if (lambda.blockBody() != null) {
+            statements(lambda.blockBody(), captured, false, true, false, state);
+        } else {
+            expression(lambda.expressionBody(), captured, true, state);
+        }
+    }
+
     private static void expression(Ast.Expr expr, Scope scope, boolean inDefer, State state) {
         if (expr == null) return;
         if (expr instanceof Ast.AssignExpr assignment) {
@@ -245,14 +261,9 @@ public final class ReturnCleanupChecker {
             // from the enclosing finally or function.
             callable(lambda.blockBody() == null ? List.of() : lambda.blockBody(),
                     lambda.parameters(), scope);
-            if (lambda.expressionBody() != null) {
-                expression(lambda.expressionBody(), new Scope(scope), inDefer, state);
-            }
-            if (inDefer && lambda.blockBody() != null) {
-                Scope captured = new Scope(scope);
-                for (Ast.Param param : lambda.parameters()) captured.define(param.name());
-                statements(lambda.blockBody(), captured, false, true, false, state);
-            }
+            // The lambda is only a value here. Its effects are analyzed
+            // when a deferred callback (or an inline callee) invokes it.
+            // Otherwise dormant nested lambdas cause false rebind reports.
         } else if (expr instanceof Ast.BinaryExpr binary) {
             expression(binary.left(), scope, inDefer, state);
             expression(binary.right(), scope, inDefer, state);
@@ -278,16 +289,11 @@ public final class ReturnCleanupChecker {
                 // callback once to avoid recursive-call analysis loops.
                 if (target != null && target.closure != null
                         && state.scannedDeferredCallbacks.add(target)) {
-                    Scope captured = new Scope(target.definingScope);
-                    for (Ast.Param param : target.closure.parameters()) {
-                        captured.define(param.name());
-                    }
-                    if (target.closure.blockBody() != null) {
-                        statements(target.closure.blockBody(), captured, false, true, false, state);
-                    } else {
-                        expression(target.closure.expressionBody(), captured, true, state);
-                    }
+                    deferredLambda(target.closure, target.definingScope, state);
                 }
+            }
+            if (inDefer && call.callee() instanceof Ast.LambdaExpr lambda) {
+                deferredLambda(lambda, scope, state);
             }
             expression(call.callee(), scope, inDefer, state);
             call.arguments().forEach(e -> expression(e, scope, inDefer, state));

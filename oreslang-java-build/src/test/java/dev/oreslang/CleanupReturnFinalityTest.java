@@ -268,6 +268,38 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
+    void dormantNestedLambdaDoesNotRunDuringDeferredCleanup() {
+        String source = """
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  defer || -> {
+                    const dormant = || -> { result = new Box(); };
+                  };
+                  return result;
+                }
+                """;
+        assertDoesNotThrow(() -> ReturnCleanupChecker.check(Parser.parse(BOX + source)));
+    }
+
+    @Test
+    void invokedNestedLambdaCannotRebindThePendingReturn() {
+        String source = """
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  defer || -> {
+                    const invoked = || -> { result = new Box(); };
+                    invoked();
+                  };
+                  return result;
+                }
+                """;
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReturnCleanupChecker.check(Parser.parse(BOX + source)));
+        assertTrue(error.getMessage().contains("defer cannot reassign returned binding 'result'"),
+                error::getMessage);
+    }
+
+    @Test
     void deferredArrayMutationPreservesTheOriginalReturnedObject() throws Exception {
         String code = """
                 fnc make(): Array<int> {
