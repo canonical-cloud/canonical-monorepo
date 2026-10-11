@@ -17,7 +17,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD:oreslang-conformance-source)" = "dc6763f8f207b9b02fdb03b1fb5aa90dcc8519a2"
+          test "$(git rev-parse HEAD:oreslang-conformance-source)" = "09e6a90fb18459c65af99c468c85e9a31208bb7b"
       - name: Run harness unit and paired-proof negative tests
         working-directory: oreslang-conformance-source
         run: npm test
