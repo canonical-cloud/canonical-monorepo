@@ -300,6 +300,41 @@ final class CleanupReturnFinalityTest {
     }
 
     @Test
+    void reassignedDeferredCallbackFailsClosedInsteadOfUsingStaleClosure() {
+        String source = """
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  let mut callback = || -> {};
+                  callback = || -> { result = new Box(); };
+                  defer callback();
+                  return result;
+                }
+                """;
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReturnCleanupChecker.check(Parser.parse(BOX + source)));
+        assertTrue(error.getMessage().contains("defer cannot verify reassigned or dynamic local callback"),
+                error::getMessage);
+    }
+
+    @Test
+    void aliasOfReassignedDeferredCallbackAlsoFailsClosed() {
+        String source = """
+                fnc make(): Box {
+                  let mut Box result = new Box();
+                  let mut callback = || -> {};
+                  callback = || -> { result = new Box(); };
+                  const alias = callback;
+                  defer alias();
+                  return result;
+                }
+                """;
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> ReturnCleanupChecker.check(Parser.parse(BOX + source)));
+        assertTrue(error.getMessage().contains("defer cannot verify reassigned or dynamic local callback"),
+                error::getMessage);
+    }
+
+    @Test
     void deferredArrayMutationPreservesTheOriginalReturnedObject() throws Exception {
         String code = """
                 fnc make(): Array<int> {

@@ -24,6 +24,7 @@ public final class ReturnCleanupChecker {
         final String name;
         final Ast.LambdaExpr closure;
         final Scope definingScope;
+        boolean reassigned;
         Binding(String name, Ast.LambdaExpr closure, Scope definingScope) {
             this.name = name;
             this.closure = closure;
@@ -96,6 +97,7 @@ public final class ReturnCleanupChecker {
                 expression(binding.initializer(), scope, inDefer, state);
                 Ast.LambdaExpr cleanupClosure = null;
                 Scope definingScope = scope;
+                boolean unknownAlias = false;
                 if (binding.initializer() instanceof Ast.LambdaExpr lambda) {
                     cleanupClosure = lambda;
                 } else if (binding.initializer() instanceof Ast.NameExpr alias) {
@@ -103,11 +105,13 @@ public final class ReturnCleanupChecker {
                     if (source != null) {
                         cleanupClosure = source.closure;
                         definingScope = source.definingScope;
+                        unknownAlias = source.reassigned;
                     }
                 }
                 // Aliases retain the closure's original lexical capture
                 // environment, not the potentially shadowing call site.
                 scope.define(binding.name(), cleanupClosure, definingScope);
+                if (unknownAlias) scope.resolve(binding.name()).reassigned = true;
             } else if (stmt instanceof Ast.DestructureStmt destructure) {
                 expression(destructure.initializer(), scope, inDefer, state);
                 for (Ast.DestructureBinding binding : destructure.bindings()) {
@@ -250,9 +254,14 @@ public final class ReturnCleanupChecker {
     private static void expression(Ast.Expr expr, Scope scope, boolean inDefer, State state) {
         if (expr == null) return;
         if (expr instanceof Ast.AssignExpr assignment) {
-            if (inDefer && assignment.target() instanceof Ast.NameExpr name) {
+            if (assignment.target() instanceof Ast.NameExpr name) {
                 Binding target = scope.resolve(name.name());
-                if (target != null) state.reboundInDefer.add(target);
+                // A closure reassigned after registration cannot be proven
+                // safe using the original captured lambda declaration.
+                if (target != null) {
+                    if (target.closure != null) target.reassigned = true;
+                    if (inDefer) state.reboundInDefer.add(target);
+                }
             }
             expression(assignment.target(), scope, inDefer, state);
             expression(assignment.value(), scope, inDefer, state);
@@ -284,6 +293,11 @@ public final class ReturnCleanupChecker {
         } else if (expr instanceof Ast.CallExpr call) {
             if (inDefer && call.callee() instanceof Ast.NameExpr name) {
                 Binding target = scope.resolve(name.name());
+                if (target != null && (target.closure == null || target.reassigned)) {
+                    throw new IllegalArgumentException(
+                            "defer cannot verify reassigned or dynamic local callback '" +
+                            name.name() + "'; use a statically known lexical callback");
+                }
                 // A named local cleanup callback must not evade the direct
                 // deferred-lambda returned-binding check. Scan each lexical
                 // callback once to avoid recursive-call analysis loops.
