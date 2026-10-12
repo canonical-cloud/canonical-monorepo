@@ -13,19 +13,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - name: Verify exact 30 origin Git blobs
+      - name: Verify exact 51 origin Git blobs
         shell: bash
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           import {execFileSync} from 'node:child_process';
           const proof=JSON.parse(fs.readFileSync('portable/provenance/reconciled-source-pins.json','utf8'));
-          if(proof.files.length!==30||proof.sources.length!==2)throw Error('incomplete source manifest');
+          if(proof.files.length!==51||proof.sources.length!==4)throw Error('incomplete source manifest');
           for(const file of proof.files) {
             const actual=execFileSync('git',['hash-object',file.path],{encoding:'utf8'}).trim();
             if(actual!==file.blobSha)throw Error('source mismatch: '+file.path);
           }
-          console.log('RECONCILED_GIT_BLOBS_VERIFIED 30');
+          console.log('RECONCILED_GIT_BLOBS_VERIFIED 51');
           NODE
       - name: Install and verify Wasm32 Clang / LLD toolchain
         run: |
