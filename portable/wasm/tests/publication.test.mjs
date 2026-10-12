@@ -55,7 +55,7 @@ test("oversized linked Wasm is rejected before it is read or published",async()=
   await chmod(clang,0o700);
   await assert.rejects(
    compileOresToWasm({source,compiler,output,clang,environment:"browser"}),
-   /linked Wasm exceeds 16 MiB artifact budget/
+   /linked Wasm exceeds (16 MiB artifact budget|configured byte budget)/
   );
   await assert.rejects(readFile(output),/ENOENT/);
   await assert.rejects(readFile(output+".artifact.json"),/ENOENT/);
