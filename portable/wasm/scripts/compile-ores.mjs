@@ -15,18 +15,22 @@ const MAX_SOURCE_BYTES=1024*1024,MAX_COMPILER_BYTES=256*1024*1024,MAX_WASM_BYTES
 // stat(path) followed by readFile(path) leaves a rename/size TOCTOU gap and
 // may allocate an unbounded input before noticing its size.
 async function readBounded(path,limit,label){
+ const limitError=label==="compiler"?"compiler exceeds 256 MiB executable budget":
+  label==="linked Wasm"?"linked Wasm exceeds 16 MiB artifact budget":
+  label+" exceeds configured byte budget";
  const fd=await open(path,"r");
  try{
   const st=await fd.stat();
-  if(!st.isFile()||st.size<1||st.size>limit)
-   throw Error(label+" exceeds configured byte budget or is not a regular file");
+  if(!st.isFile())throw Error(label+" is not a regular file");
+  if(st.size===0)throw Error(label+" is empty");
+  if(st.size>limit)throw Error(limitError);
   const chunks=[];let total=0;
   for(;;){
    const buf=Buffer.allocUnsafe(Math.min(65536,limit-total+1));
    const {bytesRead}=await fd.read(buf,0,buf.length,null);
    if(bytesRead===0)break;
    total+=bytesRead;
-   if(total>limit)throw Error(label+" exceeds configured byte budget");
+   if(total>limit)throw Error(limitError);
    chunks.push(buf.subarray(0,bytesRead));
   }
   if(total===0)throw Error(label+" is empty");
