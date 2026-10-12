@@ -215,3 +215,72 @@ test("synchronous Worker receipts and drain completion do not create a stale dea
  await new Promise(resolve=>setTimeout(resolve,35));
  await actor.get_done();
 });
+
+test("synchronous thousands-of-receipts adapter uses bounded stack and preserves FIFO",async()=>{
+ const seen=[];let cb,terminated=0,panics=0;
+ const factory=()=>({
+  addEventListener(kind,fn){if(kind==="message")cb=fn},
+  removeEventListener(){},
+  postMessage(m){
+   if(m.kind==="oreslang-v2-init")cb({data:{kind:"oreslang-v2-ready"}});
+   else if(m.kind==="oreslang-v2-data"){
+    seen.push(m.id);
+    cb({data:{kind:"oreslang-v2-receipt",id:m.id,ok:true}});
+   }else if(m.kind==="oreslang-v2-control")
+    cb({data:{kind:"oreslang-v2-stopped"}});
+  },
+  terminate(){terminated++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,
+  capacity:2048,maxFrameBytes:256,maxReservedBytes:2048*256,timeoutMs:5000,
+  onSupervisorPanic(){panics++}});
+ const submissions=Array.from({length:1800},(_,i)=>actor.send(["ticket",BigInt(i)]));
+ // drain() closes to new tickets but must service every already reserved send.
+ const completion=actor.drain();
+ await Promise.all(submissions);
+ await completion;
+ assert.equal(seen.length,1800);
+ assert.deepEqual(seen,Array.from({length:1800},(_,i)=>i+1));
+ assert.equal(actor.pending,0);
+ assert.equal(terminated,1);
+ assert.equal(panics,0);
+});
+
+test("drain after concurrent admission must not drop pre-sealed DATA",async()=>{
+ const observed=[];let cb;
+ const factory=()=>({
+  addEventListener(k,fn){if(k==="message")cb=fn},
+  removeEventListener(){},
+  postMessage(msg){
+   if(msg.kind==="oreslang-v2-init")queueMicrotask(()=>cb({data:{kind:"oreslang-v2-ready"}}));
+   if(msg.kind==="oreslang-v2-data"){
+    observed.push(msg.id);
+    queueMicrotask(()=>cb({data:{kind:"oreslang-v2-receipt",id:msg.id,ok:true}}));
+   }
+   if(msg.kind==="oreslang-v2-control")
+    queueMicrotask(()=>cb({data:{kind:"oreslang-v2-stopped"}}));
+  },terminate(){}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory});
+ const first=actor.send(["first",1n]),second=actor.send(["second",2n]);
+ const drained=actor.drain();
+ await assert.rejects(actor.send(["too late",3n]),/mailbox closed/);
+ assert.deepEqual(await Promise.all([first,second]),[true,true]);
+ await drained;
+ assert.deepEqual(observed,[1,2]);
+ assert.equal(actor.pending,0);
+});
+
+test("failed Worker listener registration terminates an allocated Worker",async()=>{
+ let terminated=0;
+ const broken=()=>({
+  addEventListener(kind){if(kind==="error")throw Error("listener installation failed")},
+  removeEventListener(){},
+  postMessage(){},
+  terminate(){terminated++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:broken});
+ await assert.rejects(actor.get_done(),/initialization failed/);
+ await assert.rejects(actor.send(["late",42n]),/mailbox closed/);
+ assert.equal(terminated,1);
+});
