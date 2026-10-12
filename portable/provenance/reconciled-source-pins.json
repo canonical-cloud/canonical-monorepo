@@ -4,8 +4,8 @@
   "sources": [
     {
       "repository": "ores-truffle-oreslang/oreslang-browser",
-      "headCommit": "86c749dc4ca12ea4b0cf4f2b2ff031742b2320f7",
-      "headTree": "6aa5345ed1cc68e9ca76559066b84a2f96775177",
+      "headCommit": "4b9e37d1bfe896d7eabbb0b2830ae429525f310f",
+      "headTree": "efb20f1498e78ba5f3de6c3713cbb2c45f7be61f",
       "count": 21
     },
     {
@@ -42,7 +42,7 @@
     },
     {
       "path": "portable/browser/src/actor-transport.mjs",
-      "blobSha": "3c527f9838c661a515e8b762b2dbddf5865bbc6a"
+      "blobSha": "7b6bb4454fcffe2a3a6c5cf99a0ca22f3e9d8690"
     },
     {
       "path": "portable/browser/src/artifact.mjs",
@@ -74,7 +74,7 @@
     },
     {
       "path": "portable/browser/tests/actor-transport.test.mjs",
-      "blobSha": "1d8df9a3f03bdcbd6d44e39a8d4638404d4a47e0"
+      "blobSha": "1d9e7d274d71c31f6f2ac120f55d04ff44dd8e17"
     },
     {
       "path": "portable/browser/tests/artifact.test.mjs",
