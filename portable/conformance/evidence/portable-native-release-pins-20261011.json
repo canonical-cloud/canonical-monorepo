@@ -4,14 +4,14 @@
   "sources": [
     {
       "repository": "ores-truffle-oreslang/oreslang-browser",
-      "headCommit": "ee6e2d8e358127865e09db9305d22e5deae30c3d",
-      "headTree": "107c1897f7fc3d6a10018d1d7a6514e1d5eda5fa",
+      "headCommit": "602cace903cbe572fc2bcb615046bac35147ab1d",
+      "headTree": "bce9ee4c400da872dcd3daa8cc9bcf0627f64306",
       "count": 20
     },
     {
       "repository": "ores-truffle-oreslang/oreslang-wasm",
-      "headCommit": "04906ea49db2ec109d7247cc16c7e130d68f23f8",
-      "headTree": "e37e290c5d60b28fac586f7d13319bcaeaab0d39",
+      "headCommit": "774fb8a5ad0ac31b5b10b06ae711f0b92d74c8b5",
+      "headTree": "17999ff2db20759c28c42257b3c9648ffbea611a",
       "count": 11
     },
     {
@@ -38,7 +38,7 @@
     },
     {
       "path": "portable/browser/src/actor-message-worker.mjs",
-      "blobSha": "785b5cc64e2b74424a22e10ed46c4c71b66f28f6"
+      "blobSha": "eff80af7880cb91d0c6295b38a92231c3317ecb2"
     },
     {
       "path": "portable/browser/src/actor-transport.mjs",
@@ -74,7 +74,7 @@
     },
     {
       "path": "portable/browser/tests/actor-transport.test.mjs",
-      "blobSha": "ede7ee348cfc589200a90a7dd81544383c99c26c"
+      "blobSha": "90b81f4b6d76ae236af6745db566a15b90d863c7"
     },
     {
       "path": "portable/browser/tests/artifact.test.mjs",
@@ -106,7 +106,7 @@
     },
     {
       "path": "portable/wasm/scripts/compile-ores.mjs",
-      "blobSha": "4cfa0e94f70af1b039e679ed1a0302fe01cde781"
+      "blobSha": "eb43ede6df2bbff28d6849fa683191bf0d4ce715"
     },
     {
       "path": "portable/wasm/tests/bridge.test.mjs",
@@ -138,7 +138,7 @@
     },
     {
       "path": "portable/wasm/tests/bridge-byte-budget.test.mjs",
-      "blobSha": "b392c645c0246428b97523cb70f3ebffaddadb0c"
+      "blobSha": "f18330edd64f9b66db86d68c1f1ec7a22f5b22df"
     },
     {
       "path": "portable/wasm/docs/SOURCE_SNAPSHOT_ADMISSION.md",
