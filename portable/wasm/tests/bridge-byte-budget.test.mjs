@@ -13,10 +13,10 @@ test("large sparse source and compiler are rejected before IR execution or artif
   await writeFile(compiler,original,{mode:0o700});
   await writeFile(source,"pub fnc main(): int { return 42; }\\n");
   await truncate(source,1024*1024+1);
-  await assert.rejects(compileOresToWasm({compiler,source,output}),/source exceeds configured byte budget/);
+  await assert.rejects(compileOresToWasm({compiler,source,output}),/source exceeds (configured byte budget|1 MiB compiler bridge budget)/);
   await writeFile(source,"pub fnc main(): int { return 42; }\\n");
   await truncate(compiler,256*1024*1024+1);
-  await assert.rejects(compileOresToWasm({compiler,source,output}),/compiler exceeds configured byte budget/);
+  await assert.rejects(compileOresToWasm({compiler,source,output}),/compiler exceeds (configured byte budget|256 MiB executable budget)/);
   for(const p of [output,output+".artifact.json",output+".provenance.json"])
    await assert.rejects(readFile(p),{code:"ENOENT"});
  }finally{await rm(dir,{recursive:true,force:true})}
