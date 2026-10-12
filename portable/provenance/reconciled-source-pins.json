@@ -10,9 +10,9 @@
     },
     {
       "repository": "ores-truffle-oreslang/oreslang-wasm",
-      "headCommit": "54b033242f9d73f472572a0337ec732756ebe8b5",
-      "headTree": "fa816faf20c17904533820447c2eeb0ebfc3acbf",
-      "count": 8
+      "headCommit": "38f9c47a1e3e19a146392c9ab07ee9541144d012",
+      "headTree": "b3175efa7f9300fc75aa01e94ea3053f3f3c0cfa",
+      "count": 9
     }
   ],
   "files": [
@@ -94,7 +94,7 @@
     },
     {
       "path": "portable/wasm/scripts/compile-ores.mjs",
-      "blobSha": "d04fe8c557c6882194a0c4679bf7ddaf03438946"
+      "blobSha": "76be46d65a8a21ec4105731b4e805bcc3eb87a11"
     },
     {
       "path": "portable/wasm/tests/bridge.test.mjs",
@@ -123,6 +123,10 @@
     {
       "path": "portable/wasm/transport/messagepack-v2.mjs",
       "blobSha": "6f12cfc99a2bb375a600123e339fe8e6a72a83fb"
+    },
+    {
+      "path": "portable/wasm/tests/bridge-byte-budget.test.mjs",
+      "blobSha": "d9ec5e13ca0e09222fb24bc91754980aaa484312"
     }
   ]
 }
