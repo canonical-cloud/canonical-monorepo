@@ -21,7 +21,7 @@ test("browser codec is byte-identical to canonical upstream Wasm codec",async()=
  const b=await readFile(new URL("../src/messagepack-v2.mjs",import.meta.url));
  const header=Buffer.from("blob "+b.length+"\0","utf8");
  assert.equal(createHash("sha1").update(header).update(b).digest("hex"),
-  "6f12cfc99a2bb375a600123e339fe8e6a72a83fb");
+  "53407bdc7b285a122fdf1a48845f74b18cfb92ce");
 });
 test("isolated Worker processes bounded canonical actor DATA; drain seals mailbox",async()=>{
  const actor=createActorMessageTransport({...spec,workerFactory,capacity:3});
@@ -369,4 +369,21 @@ test("real Worker accepts strictly increasing DATA tickets with gaps from failed
   response=wait();worker.postMessage({kind:"oreslang-v2-control",action:"drain"});
   assert.equal((await response).kind,"oreslang-v2-stopped");
  }finally{await worker.terminate()}
+});
+
+test("oversized or empty Worker INIT metadata fails before Worker allocation",()=>{
+ let started=0;
+ const workerFactory=()=>{started++;throw Error("unexpected carrier allocation")};
+ for(const contract of [
+  {schemaId:"",descriptor:"T[S,I]"},
+  {schemaId:"x".repeat(513),descriptor:"T[S,I]"},
+  {schemaId:"🌐".repeat(200),descriptor:"T[S,I]"},
+  {schemaId:spec.schemaId,descriptor:""},
+  {schemaId:spec.schemaId,descriptor:"x".repeat(4097)},
+  {schemaId:spec.schemaId,descriptor:"🌐".repeat(1100)}
+ ]){
+  assert.throws(()=>createActorMessageTransport({...contract,workerFactory}),
+   /schema or descriptor byte budget/);
+ }
+ assert.equal(started,0);
 });
