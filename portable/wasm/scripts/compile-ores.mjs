@@ -5,8 +5,8 @@
  */
 import {spawnSync} from "node:child_process";
 import {createHash} from "node:crypto";
-import {readFile,writeFile,mkdir,mkdtemp,rm,rename,open} from "node:fs/promises";
-import {dirname,resolve,isAbsolute,join} from "node:path";
+import {readFile,writeFile,mkdir,mkdtemp,rm,rename,open,realpath,stat} from "node:fs/promises";
+import {dirname,resolve,isAbsolute,join,basename} from "node:path";
 import {fileURLToPath} from "node:url";
 const projectRoot=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const sha=bytes=>createHash("sha256").update(bytes).digest("hex");
@@ -60,26 +60,41 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
  absolute(compiler,"compiler");
  absolute(source,"source");
  absolute(output,"output");
- const protectedInputs=new Set([resolve(source),resolve(compiler)]);
- // Do not let the executable or sidecars replace an input by path alias.
- for(const destination of [output,output+".provenance.json",output+".artifact.json"]){
-  if(protectedInputs.has(resolve(destination)))
+ // Resolve the publication directory before any write and compare actual
+ // physical input identities; lexical resolve() alone misses parent symlinks.
+ await mkdir(dirname(output),{recursive:true});
+ const [sourcePath,compilerPath,outputParent]=await Promise.all([
+  realpath(source),realpath(compiler),realpath(dirname(output))
+ ]);
+ const published=join(outputParent,basename(output));
+ const protectedInputs=new Set([sourcePath,compilerPath]);
+ for(const destination of [published,published+".provenance.json",published+".artifact.json"]){
+  if(protectedInputs.has(destination))
    throw Error("output or artifact metadata path overlaps a compiler/source input");
  }
  if(!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(exportName))throw Error("unsupported export name");
+ const [sourceStat,compilerStat]=await Promise.all([stat(sourcePath),stat(compilerPath)]);
+ for(const destination of [published,published+".provenance.json",published+".artifact.json"]){
+  try{
+   const existing=await stat(destination);
+   if([sourceStat,compilerStat].some(input=>input.dev===existing.dev&&input.ino===existing.ino))
+    throw Error("output or artifact metadata path overlaps a compiler/source input");
+  }catch(error){if(error?.code!=="ENOENT")throw error}
+ }
+ // Bounded reads retain the same file descriptor for stat and data transfer.
+ // No unbounded readFile() after an attacker-controlled size preflight.
  const [sourceBytes,compilerBytes]=await Promise.all([
-  readBounded(source,MAX_SOURCE_BYTES,"source"),
-  readBounded(compiler,MAX_COMPILER_BYTES,"compiler")
+  readBounded(sourcePath,MAX_SOURCE_BYTES,"source"),
+  readBounded(compilerPath,MAX_COMPILER_BYTES,"compiler")
  ]);
  const actualCompilerHash=sha(compilerBytes);
  if(compilerSha256!==undefined&&compilerSha256!==actualCompilerHash)throw Error("compiler binary SHA-256 does not match pinned hash");
  if(environment!==undefined&&!["browser","edge-js","edge-wasi"].includes(environment))
   throw Error("unsupported portable host environment");
- await mkdir(dirname(output),{recursive:true});
  // Compile exactly the already-hashed source snapshot, not a mutable path.
  // The current scalar subset supports standalone source files; relative
  // source imports must be resolved and pinned by a future module graph gate.
- const scratch=await mkdtemp(join(dirname(output),".oreslang-wasm-"));
+ const scratch=await mkdtemp(join(outputParent,".oreslang-wasm-"));
  const provisional=join(scratch,"guest.wasm");
  try{
  const stagedSource=join(scratch,"source.ores");
@@ -91,15 +106,15 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
  // filesystem principal; this is not a sandbox for a malicious compiler.
  await writeFile(stagedCompiler,compilerBytes,{mode:0o500,flag:"wx"});
  const ir=run(stagedCompiler,environment?["--target=wasm32",stagedSource]:[stagedSource]);
- if(sha(await readFile(stagedCompiler))!==actualCompilerHash)
+ if(sha(await readBounded(stagedCompiler,MAX_COMPILER_BYTES,"staged compiler"))!==actualCompilerHash)
   throw Error("staged compiler executable changed during execution");
  // The executable itself is also caller-owned mutable input. Never publish
  // provenance tied to a compiler digest if its executable changed in flight.
- if(sha(await readFile(compiler))!==actualCompilerHash)
+ if(sha(await readBounded(compilerPath,MAX_COMPILER_BYTES,"compiler"))!==actualCompilerHash)
   throw Error("compiler executable changed during execution; refusing stale provenance");
  // Reject mutation of the snapshotted compilation input even when the
  // original caller path remains unchanged.
- if(sha(await readFile(stagedSource))!==sha(sourceBytes))
+ if(sha(await readBounded(stagedSource,MAX_SOURCE_BYTES,"staged source"))!==sha(sourceBytes))
   throw Error("staged compiler input changed during execution");
  if(environment&&!/target triple = "wasm32-unknown-unknown"/.test(ir))
   throw Error("compiler did not emit wasm32 target-marked IR");
@@ -141,9 +156,9 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
  // Publish metadata first; never expose a new executable after metadata
  // publication failed. Consumers must still SHA-check all sidecars: separate
  // files cannot be atomically committed as one transaction.
- if(environment)await rename(join(scratch,"artifact.json"),output+".artifact.json");
- await rename(join(scratch,"provenance.json"),output+".provenance.json");
- await rename(provisional,output);
+ if(environment)await rename(join(scratch,"artifact.json"),published+".artifact.json");
+ await rename(join(scratch,"provenance.json"),published+".provenance.json");
+ await rename(provisional,published);
  return record;
  }finally{await rm(scratch,{recursive:true,force:true})}
 }
