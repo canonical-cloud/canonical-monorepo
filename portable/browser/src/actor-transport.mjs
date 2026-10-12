@@ -38,7 +38,7 @@ export function createActorMessageTransport({
  const arm=()=>{if(finished)return;clear();deadline=setTimeout(()=>fatal(Error("isolated actor Worker deadline exceeded")),timeoutMs)};
  const cleanup=()=>{
   clear();
-  for(const [kind,cb] of [["message",onMessage],["error",onError],["messageerror",onError]])
+  for(const [kind,cb] of [["message",onMessage],["error",onError],["messageerror",onError],["exit",onExit]])
    try{worker.removeEventListener(kind,cb)}catch{}
   try{const x=worker.terminate();if(x&&typeof x.catch==="function")x.catch(()=>{})}catch{}
  };
@@ -63,6 +63,10 @@ export function createActorMessageTransport({
  };
  const fatal=error=>complete(error instanceof Error?error:Error("isolated actor Worker failed"));
  const onError=()=>fatal(Error("isolated actor Worker failed"));
+ // A native worker_threads adapter may surface exit without first delivering
+ // an error event. Browser Workers do not standardize "exit"; registration
+ // is optional there, but supported native adapters fail promptly.
+ const onExit=()=>fatal(Error("isolated actor Worker exited unexpectedly"));
  // Synchronous Worker adapters may deliver a receipt directly inside
  // postMessage(). Trampoline the next mailbox turn rather than recursively
  // entering pump() for every message (a capacity-sized stack overflow).
@@ -97,6 +101,8 @@ export function createActorMessageTransport({
   if(finished)return;
   const m=event?.data;
   if(!m||typeof m!=="object")return fatal(Error("invalid actor worker message"));
+  if(m.kind==="oreslang-v2-panic")
+   return fatal(Error("isolated actor Worker reported panic"));
   if(m.kind==="oreslang-v2-ready"&&!ready&&!stopping){ready=true;clear();pump();return}
   if(m.kind==="oreslang-v2-receipt"&&ready&&active!==null&&
     m.id===active.id&&m.ok===true){
@@ -113,6 +119,7 @@ export function createActorMessageTransport({
   worker.addEventListener("message",onMessage);
   worker.addEventListener("error",onError);
   worker.addEventListener("messageerror",onError);
+  try{worker.addEventListener("exit",onExit)}catch{}
   worker.postMessage({kind:"oreslang-v2-init",schemaId,descriptor});
   if(!ready&&!finished)arm();
  }catch{
