@@ -145,3 +145,73 @@ test("invalid Worker factory adapters terminate already allocated carriers",()=>
  assert.throws(()=>createActorMessageTransport({...spec,workerFactory:factory}),/trusted dedicated Worker required/);
  assert.equal(terminated,1);
 });
+
+test("DATA frame is scrubbed after internal receipt without losing FIFO delivery",async()=>{
+ let receive,frame,delivered;
+ const factory=()=>({
+  addEventListener(kind,cb){if(kind==="message")receive=cb},
+  removeEventListener(){},
+  postMessage(msg){
+   if(msg.kind==="oreslang-v2-init")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-ready"}}));
+   if(msg.kind==="oreslang-v2-data"){
+    frame=msg.frame;
+    delivered=Uint8Array.from(frame);
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-receipt",id:msg.id,ok:true}}));
+   }
+   if(msg.kind==="oreslang-v2-control")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-stopped"}}));
+  },terminate(){}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory});
+ await actor.send(["scrub-me",42n]);
+ await actor.drain();
+ assert.ok(delivered?.some(x=>x!==0),"Worker received nonempty canonical frame");
+ assert.ok(frame?.every(x=>x===0),"host must scrub acknowledged frame");
+ assert.equal(actor.pending,0);
+});
+
+test("cancel scrubs active DATA frame and does not report supervisor panic",async()=>{
+ let receive,frame,reported=0;
+ const factory=()=>({
+  addEventListener(kind,cb){if(kind==="message")receive=cb},
+  removeEventListener(){},
+  postMessage(msg){
+   if(msg.kind==="oreslang-v2-init")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-ready"}}));
+   if(msg.kind==="oreslang-v2-data")frame=msg.frame;
+  },terminate(){}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,
+  onSupervisorPanic(){reported++}});
+ await actor.send(["scrub-on-stop",8n]);
+ // The ready callback has been delivered and DATA has been dispatched.
+ assert.ok(frame?.some(x=>x!==0),"test observed active frame before stop");
+ await assert.rejects(actor.stop(),/cancelled/);
+ assert.ok(frame.every(x=>x===0),"active frame zeroized at teardown");
+ assert.equal(actor.pending,0);
+ assert.equal(reported,0);
+});
+
+test("synchronous Worker receipts and drain completion do not create a stale deadline",async()=>{
+ let cb,term=0;
+ const factory=()=>({
+  addEventListener(kind,fn){if(kind==="message")cb=fn},
+  removeEventListener(){},
+  postMessage(msg){
+   if(msg.kind==="oreslang-v2-init")cb({data:{kind:"oreslang-v2-ready"}});
+   if(msg.kind==="oreslang-v2-data")
+    cb({data:{kind:"oreslang-v2-receipt",id:msg.id,ok:true}});
+   if(msg.kind==="oreslang-v2-control")
+    cb({data:{kind:"oreslang-v2-stopped"}});
+  },
+  terminate(){term++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,timeoutMs:20});
+ await actor.send(["sync",1n]);
+ await actor.drain();
+ assert.equal(actor.pending,0);
+ assert.equal(term,1);
+ await new Promise(resolve=>setTimeout(resolve,35));
+ await actor.get_done();
+});
