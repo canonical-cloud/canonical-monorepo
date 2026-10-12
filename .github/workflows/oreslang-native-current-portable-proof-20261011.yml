@@ -13,19 +13,19 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
-      - name: Verify all 51 exact source Git blobs before execution
+      - name: Verify all 52 exact source Git blobs before execution
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           import cp from 'node:child_process';
           const x=JSON.parse(fs.readFileSync('portable/provenance/reconciled-source-pins.json','utf8'));
-          if(x.files.length!==51||x.sources.length!==4||x.sources.some(s=>s.count<5))
+          if(x.files.length!==52||x.sources.length!==4||x.sources.some(s=>s.count<5))
             throw Error('incomplete immutable source input matrix');
           for(const f of x.files){
             const h=cp.execFileSync('git',['hash-object',f.path],{encoding:'utf8'}).trim();
             if(h!==f.blobSha)throw Error('Git blob mismatch: '+f.path);
           }
-          console.log('FOUR_BACKENDS_51_EXACT_SOURCE_BLOBS_VERIFIED');
+          console.log('FOUR_BACKENDS_52_EXACT_SOURCE_BLOBS_VERIFIED');
           NODE
       - name: Execute Conformance PR #12 immutable source mirror verifier
         shell: bash
@@ -33,13 +33,13 @@ jobs:
           set -euo pipefail
           test "$(git hash-object portable/conformance/bin/verify-portable-release-mirror.mjs)" = "4d7a2b9543642c07a189b2b3b4f900cfe54ac87a"
           test "$(git hash-object portable/conformance/tests/portable-release-mirror.test.mjs)" = "16d08ef74143c531327f5b04171a54ed5b9bad65"
-          test "$(git hash-object portable/conformance/evidence/portable-native-release-pins-20261011.json)" = "49d639511d92af1df1527847a9634c1af5ce587c"
+          test "$(git hash-object portable/conformance/evidence/portable-native-release-pins-20261011.json)" = "d507bb2dcefa8d009e93107f7e4e141509e8f4aa"
           cmp portable/provenance/reconciled-source-pins.json portable/conformance/evidence/portable-native-release-pins-20261011.json
           node --test portable/conformance/tests/portable-release-mirror.test.mjs
           node portable/conformance/bin/verify-portable-release-mirror.mjs \
             --root="$GITHUB_WORKSPACE" \
             --manifest="$GITHUB_WORKSPACE/portable/conformance/evidence/portable-native-release-pins-20261011.json" \
-            --expected-files=51 --expected-sources=4
+            --expected-files=52 --expected-sources=4
           echo CONFORMANCE_EXACT_SOURCE_GATE_PASSED
       - name: Install LLVM native compiler and Wasm32 link dependencies
         run: |
