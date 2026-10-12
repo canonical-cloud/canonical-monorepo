@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {Worker} from "node:worker_threads";
+import {once} from "node:events";
+import {encodeActorMessageV2} from "../src/messagepack-v2.mjs";
 import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {createActorMessageTransport} from "../src/actor-transport.mjs";
@@ -331,4 +333,40 @@ test("native Worker exit is terminal even without an error event",async()=>{
  assert.equal(reports,1);
  assert.equal(terminated,1);
  await assert.rejects(actor.send(["after-exit",1n]),/mailbox closed/);
+});
+
+
+test("real Worker rejects replayed or nonpositive DATA tickets via CONTROL panic",async()=>{
+ for(const invalidId of [1,0,-1,1.25,Number.MAX_SAFE_INTEGER+1]){
+  const worker=new Worker(new URL("./fixtures/actor-node-worker-shim.mjs",import.meta.url),{type:"module"});
+  try{
+   const wait=()=>once(worker,"message",{signal:AbortSignal.timeout(2500)}).then(([m])=>m);
+   let response=wait();
+   worker.postMessage({kind:"oreslang-v2-init",...spec});
+   assert.equal((await response).kind,"oreslang-v2-ready");
+   const frame=await encodeActorMessageV2({...spec,value:["hello",42n]});
+   response=wait();
+   worker.postMessage({kind:"oreslang-v2-data",id:1,frame});
+   assert.deepEqual(await response,{kind:"oreslang-v2-receipt",id:1,ok:true});
+   response=wait();
+   worker.postMessage({kind:"oreslang-v2-data",id:invalidId,frame});
+   assert.equal((await response).kind,"oreslang-v2-panic");
+  }finally{await worker.terminate()}
+ }
+});
+
+test("real Worker accepts strictly increasing DATA tickets with gaps from failed sends",async()=>{
+ const worker=new Worker(new URL("./fixtures/actor-node-worker-shim.mjs",import.meta.url),{type:"module"});
+ try{
+  const wait=()=>once(worker,"message",{signal:AbortSignal.timeout(2500)}).then(([m])=>m);
+  let response=wait();worker.postMessage({kind:"oreslang-v2-init",...spec});
+  assert.equal((await response).kind,"oreslang-v2-ready");
+  const frame=await encodeActorMessageV2({...spec,value:["valid",7n]});
+  for(const id of [2,5,8]){
+   response=wait();worker.postMessage({kind:"oreslang-v2-data",id,frame});
+   assert.deepEqual(await response,{kind:"oreslang-v2-receipt",id,ok:true});
+  }
+  response=wait();worker.postMessage({kind:"oreslang-v2-control",action:"drain"});
+  assert.equal((await response).kind,"oreslang-v2-stopped");
+ }finally{await worker.terminate()}
 });
