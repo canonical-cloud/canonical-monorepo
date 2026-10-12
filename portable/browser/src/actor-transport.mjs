@@ -27,7 +27,7 @@ export function createActorMessageTransport({
   fail("trusted dedicated Worker required");
  }
  let pending=0,ready=false,active=null,sealed=false,stopping=false,finished=false,seq=0,deadline;
- let pumping=false,repump=false;
+ let pumping=false,repump=false,terminalError=null;
  const queue=[];
  let doneResolve,doneReject;
  const done=new Promise((resolve,reject)=>{doneResolve=resolve;doneReject=reject});
@@ -44,7 +44,7 @@ export function createActorMessageTransport({
  };
  const complete=(error,notifySupervisor=true)=>{
   if(finished)return;
-  finished=true;sealed=true;
+  finished=true;sealed=true;terminalError=error||null;
   // Cancel every pending serializer immediately; no rejected actor may leave
   // unresolved admission futures waiting on untrusted crypto providers.
   for(const item of queue){
@@ -78,6 +78,7 @@ export function createActorMessageTransport({
      // must not overtake an earlier pending admission.
      if(queue[0].frame===null)break;
      const item=queue.shift();active=item;
+     item.dispatched=true;
      try{
       worker.postMessage({kind:"oreslang-v2-data",id:item.id,frame:item.frame});
       if(active===item&&!finished)arm();
@@ -128,7 +129,7 @@ export function createActorMessageTransport({
    if(pending>=capacity||(pending+1)*maxFrameBytes>maxReservedBytes)
     fail("mailbox full (count or reserved byte budget)");
    pending++;
-   const item={id:++seq,frame:null,abort:null};
+   const item={id:++seq,frame:null,abort:null,dispatched:false};
    queue.push(item);
    let timer;
    const cancelled=new Promise((_,reject)=>{item.abort=reject});
@@ -147,7 +148,11 @@ export function createActorMessageTransport({
     if(finished)fail("actor stopped during message admission");
     item.frame=frame;
     pump();
-    if(finished)fail("worker rejected message admission");
+    // A synchronously acknowledging Worker may complete drain() inside
+    // pump(). This DATA was already admitted and delivered; only terminal
+    // transport failure (or failure to dispatch) invalidates admission.
+    if(finished&&(terminalError||!item.dispatched))
+     fail("worker rejected message admission");
     return true; // admitted, not necessarily processed
    }catch(error){
     if(!finished){
