@@ -4,6 +4,7 @@
  * There is no fallback or mock compiler; caller must pass a real binary.
  */
 import {spawnSync} from "node:child_process";
+import {constants as fsConstants} from "node:fs";
 import {createHash} from "node:crypto";
 import {readFile,writeFile,mkdir,mkdtemp,rm,rename,open,realpath,stat} from "node:fs/promises";
 import {dirname,resolve,isAbsolute,join,basename} from "node:path";
@@ -11,14 +12,16 @@ import {fileURLToPath} from "node:url";
 const projectRoot=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const sha=bytes=>createHash("sha256").update(bytes).digest("hex");
 const MAX_SOURCE_BYTES=1024*1024,MAX_COMPILER_BYTES=256*1024*1024,MAX_WASM_BYTES=16*1024*1024;
-// Open the pathname exactly once and read in bounded chunks. A preflight
-// stat(path) followed by readFile(path) leaves a rename/size TOCTOU gap and
-// may allocate an unbounded input before noticing its size.
+// Open the pathname exactly once and read in bounded chunks. Use O_NONBLOCK
+// so a FIFO substituted between realpath()/stat() and open() cannot park
+// the Node libuv filesystem pool indefinitely. O_NOFOLLOW prevents the final
+// path component from being swapped for a symbolic link before open().
+// The fd.stat() regular-file check remains authoritative after open().
 async function readBounded(path,limit,label){
  const limitError=label==="compiler"?"compiler exceeds 256 MiB executable budget":
   label==="linked Wasm"?"linked Wasm exceeds 16 MiB artifact budget":
   label+" exceeds configured byte budget";
- const fd=await open(path,"r");
+ const fd=await open(path,fsConstants.O_RDONLY|fsConstants.O_NONBLOCK|fsConstants.O_NOFOLLOW);
  try{
   const st=await fd.stat();
   if(!st.isFile())throw Error(label+" is not a regular file");
@@ -78,6 +81,10 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
  }
  if(!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(exportName))throw Error("unsupported export name");
  const [sourceStat,compilerStat]=await Promise.all([stat(sourcePath),stat(compilerPath)]);
+ // Reject special files BEFORE opening them. A plain read-only open of a
+ // FIFO with no writer can block even though a later fstat would reject it.
+ if(!sourceStat.isFile())throw Error("source is not a regular file");
+ if(!compilerStat.isFile())throw Error("compiler is not a regular file");
  for(const destination of [published,published+".provenance.json",published+".artifact.json"]){
   try{
    const existing=await stat(destination);
