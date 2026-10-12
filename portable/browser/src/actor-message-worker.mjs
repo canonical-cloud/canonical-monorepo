@@ -8,9 +8,14 @@ let ready=false,closed=false,handling=false,stopPending=false,contract,lastTicke
 // Worker postMessage() snapshots into private destination memory. Never
 // mutate caller-owned SharedArrayBuffer data when rejecting a malformed frame.
 function scrubOwnedFrame(frame){
- if(!(frame instanceof Uint8Array))return;
- if(typeof SharedArrayBuffer!=="undefined"&&frame.buffer instanceof SharedArrayBuffer)return;
- try{frame.fill(0)}catch{}
+ try{
+  // The canonical decoder accepts ArrayBuffer and arbitrary typed-array
+  // views, not only Uint8Array. Scrub exactly the Worker-owned input slice.
+  const bytes=frame instanceof ArrayBuffer?new Uint8Array(frame):
+    ArrayBuffer.isView(frame)?new Uint8Array(frame.buffer,frame.byteOffset,frame.byteLength):null;
+  if(!bytes||(typeof SharedArrayBuffer!=="undefined"&&bytes.buffer instanceof SharedArrayBuffer))return;
+  bytes.fill(0);
+ }catch{}
 }
 self.addEventListener("message",async event=>{
  const data=event?.data;
@@ -43,7 +48,9 @@ self.addEventListener("message",async event=>{
   // Decode owns a snapshot before WebCrypto. Never expose incoming mutable
   // frame bytes to an untrusted actor callback or reuse borrowed buffers.
   await decodeActorMessageV2({...contract,bytes:data.frame});
-  self.postMessage({kind:"oreslang-v2-receipt",id:data.id,ok:true});
+  // A concurrent malformed/replayed DATA can trigger a terminal panic
+  // while the SHA-256 digest is pending. Never ACK after that CONTROL event.
+  if(!closed)self.postMessage({kind:"oreslang-v2-receipt",id:data.id,ok:true});
  }catch{panic();return}
  finally{
   // The decode procedure copies untrusted bytes before its crypto await;
