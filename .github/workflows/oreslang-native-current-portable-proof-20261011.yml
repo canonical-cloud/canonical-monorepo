@@ -27,6 +27,20 @@ jobs:
           }
           console.log('FOUR_BACKENDS_50_EXACT_SOURCE_BLOBS_VERIFIED');
           NODE
+      - name: Execute Conformance PR #12 immutable source mirror verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object portable/conformance/bin/verify-portable-release-mirror.mjs)" = "4d7a2b9543642c07a189b2b3b4f900cfe54ac87a"
+          test "$(git hash-object portable/conformance/tests/portable-release-mirror.test.mjs)" = "16d08ef74143c531327f5b04171a54ed5b9bad65"
+          test "$(git hash-object portable/conformance/evidence/portable-native-release-pins-20261011.json)" = "207405569b644252844e78318c22176df917b504"
+          cmp portable/provenance/reconciled-source-pins.json portable/conformance/evidence/portable-native-release-pins-20261011.json
+          node --test portable/conformance/tests/portable-release-mirror.test.mjs
+          node portable/conformance/bin/verify-portable-release-mirror.mjs \
+            --root="$GITHUB_WORKSPACE" \
+            --manifest="$GITHUB_WORKSPACE/portable/conformance/evidence/portable-native-release-pins-20261011.json" \
+            --expected-files=50 --expected-sources=4
+          echo CONFORMANCE_EXACT_SOURCE_GATE_PASSED
       - name: Install LLVM native compiler and Wasm32 link dependencies
         run: |
           sudo apt-get update -qq
