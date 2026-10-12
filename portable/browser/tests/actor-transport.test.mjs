@@ -21,7 +21,7 @@ test("browser codec is byte-identical to canonical upstream Wasm codec",async()=
  const b=await readFile(new URL("../src/messagepack-v2.mjs",import.meta.url));
  const header=Buffer.from("blob "+b.length+"\0","utf8");
  assert.equal(createHash("sha1").update(header).update(b).digest("hex"),
-  "53407bdc7b285a122fdf1a48845f74b18cfb92ce");
+  "4b5c4b22f276dadcb1cfac99f7eac00e2e45023f");
 });
 test("isolated Worker processes bounded canonical actor DATA; drain seals mailbox",async()=>{
  const actor=createActorMessageTransport({...spec,workerFactory,capacity:3});
@@ -376,14 +376,75 @@ test("oversized or empty Worker INIT metadata fails before Worker allocation",()
  const workerFactory=()=>{started++;throw Error("unexpected carrier allocation")};
  for(const contract of [
   {schemaId:"",descriptor:"T[S,I]"},
+  {schemaId:"x".repeat(257),descriptor:"T[S,I]"},
   {schemaId:"x".repeat(513),descriptor:"T[S,I]"},
+  {schemaId:"line\nbreak",descriptor:"T[S,I]"},
+  {schemaId:"🌐",descriptor:"T[S,I]"},
   {schemaId:"🌐".repeat(200),descriptor:"T[S,I]"},
   {schemaId:spec.schemaId,descriptor:""},
   {schemaId:spec.schemaId,descriptor:"x".repeat(4097)},
+  {schemaId:spec.schemaId,descriptor:"T[S,\nI]"},
   {schemaId:spec.schemaId,descriptor:"🌐".repeat(1100)}
  ]){
   assert.throws(()=>createActorMessageTransport({...contract,workerFactory}),
    /schema or descriptor byte budget/);
  }
  assert.equal(started,0);
+});
+
+
+test("malformed printable actor descriptors are denied before Worker allocation",()=>{
+ let allocated=0;
+ const factory=()=>{allocated++;throw Error("must not allocate carrier")};
+ for(const descriptor of ["T[S","T[Q]","L[]","T[S,I]]"]){
+  assert.throws(
+   ()=>createActorMessageTransport({...spec,descriptor,workerFactory:factory}),
+   /invalid schema or descriptor shape/
+  );
+ }
+ assert.equal(allocated,0);
+});
+
+test("detached DATA buffers cannot prevent terminal receipt and cleanup",async()=>{
+ let receive,terminations=0;
+ const factory=()=>({
+  addEventListener(kind,cb){if(kind==="message")receive=cb},
+  removeEventListener(){},
+  postMessage(message){
+   if(message.kind==="oreslang-v2-init")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-ready"}}));
+   if(message.kind==="oreslang-v2-data"){
+    // Emulate an adapter that transfers the ownership of the frame.
+    structuredClone(message.frame,{transfer:[message.frame.buffer]});
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-receipt",id:message.id,ok:true}}));
+   }
+   if(message.kind==="oreslang-v2-control")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-stopped"}}));
+  },
+  terminate(){terminations++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,timeoutMs:500});
+ assert.equal(await actor.send(["detached",9n]),true);
+ await actor.drain();
+ assert.equal(actor.pending,0);
+ assert.equal(terminations,1);
+});
+
+test("detached active frame cannot prevent cancellation cleanup",async()=>{
+ let receive,terminated=0;
+ const factory=()=>({
+  addEventListener(kind,cb){if(kind==="message")receive=cb},
+  removeEventListener(){},
+  postMessage(message){
+   if(message.kind==="oreslang-v2-init")
+    queueMicrotask(()=>receive({data:{kind:"oreslang-v2-ready"}}));
+   if(message.kind==="oreslang-v2-data")
+    structuredClone(message.frame,{transfer:[message.frame.buffer]});
+  },terminate(){terminated++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory});
+ assert.equal(await actor.send(["detach-stop",3n]),true);
+ await assert.rejects(actor.stop(),/cancelled/);
+ assert.equal(actor.pending,0);
+ assert.equal(terminated,1);
 });
