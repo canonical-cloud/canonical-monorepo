@@ -34,7 +34,7 @@ export function createActorMessageTransport({
  // Suppress process-level unhandled rejection while retaining its rejection.
  done.catch(()=>{});
  const clear=()=>{if(deadline!==undefined){clearTimeout(deadline);deadline=undefined}};
- const arm=()=>{clear();deadline=setTimeout(()=>fatal(Error("isolated actor Worker deadline exceeded")),timeoutMs)};
+ const arm=()=>{if(finished)return;clear();deadline=setTimeout(()=>fatal(Error("isolated actor Worker deadline exceeded")),timeoutMs)};
  const cleanup=()=>{
   clear();
   for(const [kind,cb] of [["message",onMessage],["error",onError],["messageerror",onError]])
@@ -46,8 +46,16 @@ export function createActorMessageTransport({
   finished=true;sealed=true;
   // Cancel every pending serializer immediately; no rejected actor may leave
   // unresolved admission futures waiting on untrusted crypto providers.
-  for(const item of queue)item.abort?.(error||Error("actor stopped"));
-  queue.length=0;active=null;pending=0;
+  for(const item of queue){
+   item.abort?.(error||Error("actor stopped"));
+   item.frame?.fill(0);
+   item.frame=null;
+  }
+  queue.length=0;
+  // The active frame belongs to this mailbox until an internal delivery
+  // receipt; cancellation/panic must scrub it, too.
+  active?.frame?.fill(0);
+  active=null;pending=0;
   cleanup();
   if(error){if(notifySupervisor)try{onSupervisorPanic?.({type:"ACTOR_TRANSPORT_FAILURE",reason:String(error.message||error)})}catch{}doneReject(error)}
   else doneResolve();
@@ -60,13 +68,19 @@ export function createActorMessageTransport({
    // Admission slots are ordered at send() call, not completion of async
    // SHA-256. A faster later serialization cannot overtake an earlier send.
    if(queue[0].frame===null)return;
-   const item=queue.shift();active=item.id;
-   try{worker.postMessage({kind:"oreslang-v2-data",id:item.id,frame:item.frame});arm()}
-   catch{fatal(Error("actor DATA transport failure"))}
+   const item=queue.shift();active=item;
+   try{
+    worker.postMessage({kind:"oreslang-v2-data",id:item.id,frame:item.frame});
+    // Fake/hostile adapters may issue receipts synchronously. Do not arm a
+    // timer after the matching receipt (or a terminal failure) was processed.
+    if(active===item)arm();
+   }catch{fatal(Error("actor DATA transport failure"))}
   }else if(sealed&&pending===0&&!stopping){
    stopping=true;
-   try{worker.postMessage({kind:"oreslang-v2-control",action:"drain"});arm()}
-   catch{fatal(Error("actor CONTROL transport failure"))}
+   try{
+    worker.postMessage({kind:"oreslang-v2-control",action:"drain"});
+    if(!finished)arm();
+   }catch{fatal(Error("actor CONTROL transport failure"))}
   }
  }
  const onMessage=event=>{
@@ -75,15 +89,23 @@ export function createActorMessageTransport({
   if(!m||typeof m!=="object")return fatal(Error("invalid actor worker message"));
   if(m.kind==="oreslang-v2-ready"&&!ready&&!stopping){ready=true;clear();pump();return}
   if(m.kind==="oreslang-v2-receipt"&&ready&&active!==null&&
-    m.id===active&&m.ok===true){clear();active=null;pending--;pump();return}
+    m.id===active.id&&m.ok===true){
+   clear();
+   // Worker postMessage uses structured clone (no transfer list). The host
+   // must not retain a second copy of a processed DATA frame.
+   active.frame?.fill(0);
+   active.frame=null;active=null;pending--;pump();return
+  }
   if(m.kind==="oreslang-v2-stopped"&&stopping&&active===null&&pending===0){complete();return}
   fatal(Error("invalid actor worker lifecycle or receipt"));
  };
  worker.addEventListener("message",onMessage);
  worker.addEventListener("error",onError);
  worker.addEventListener("messageerror",onError);
- try{worker.postMessage({kind:"oreslang-v2-init",schemaId,descriptor});arm()}
- catch{fatal(Error("actor Worker initialization failed"))}
+ try{
+  worker.postMessage({kind:"oreslang-v2-init",schemaId,descriptor});
+  if(!ready&&!finished)arm();
+ }catch{fatal(Error("actor Worker initialization failed"))}
  return Object.freeze({
   async send(value){
    if(sealed||finished)fail("mailbox closed");
@@ -104,17 +126,21 @@ export function createActorMessageTransport({
       fatal(err);reject(err);
      },timeoutMs);
     });
-    const frame=await Promise.race([
-     encodeActorMessageV2({schemaId,descriptor,value,maxBytes:maxFrameBytes}),
-     cancelled,admissionDeadline
-    ]);
+    // The encode promise can finish after stop() already rejected the
+    // admission race. Scrub that late owned frame rather than abandoning it.
+    const encoding=encodeActorMessageV2({schemaId,descriptor,value,maxBytes:maxFrameBytes})
+     .then(frame=>{if(finished)frame.fill(0);return frame});
+    const frame=await Promise.race([encoding,cancelled,admissionDeadline]);
     if(finished)fail("actor stopped during message admission");
     item.frame=frame;
     pump();
     if(finished)fail("worker rejected message admission");
     return true; // admitted, not necessarily processed
    }catch(error){
-    if(!finished){pending--;const pos=queue.indexOf(item);if(pos>=0)queue.splice(pos,1)}
+    if(!finished){
+     pending--;const pos=queue.indexOf(item);if(pos>=0)queue.splice(pos,1);
+     item.frame?.fill(0);item.frame=null;
+    }
     pump();throw error
    }finally{
     clearTimeout(timer);item.abort=null;
