@@ -4,7 +4,14 @@
  * Does not execute source-level Oreslang actor handlers.
  */
 import {decodeActorMessageV2} from "./messagepack-v2.mjs";
-let ready=false,closed=false,handling=false,stopPending=false,contract;
+let ready=false,closed=false,handling=false,stopPending=false,contract,lastTicket=0;
+// Worker postMessage() snapshots into private destination memory. Never
+// mutate caller-owned SharedArrayBuffer data when rejecting a malformed frame.
+function scrubOwnedFrame(frame){
+ if(!(frame instanceof Uint8Array))return;
+ if(typeof SharedArrayBuffer!=="undefined"&&frame.buffer instanceof SharedArrayBuffer)return;
+ try{frame.fill(0)}catch{}
+}
 self.addEventListener("message",async event=>{
  const data=event?.data;
  if(!data||typeof data!=="object")return panic();
@@ -23,7 +30,10 @@ self.addEventListener("message",async event=>{
   return;
  }
  if(data.kind!=="oreslang-v2-data"||!Number.isSafeInteger(data.id)||
-   data.id<1||handling||stopPending)return panic();
+   data.id<=lastTicket||handling||stopPending)return panic();
+ // Admission gaps are permitted (failed serialization can consume an ID),
+ // but a previously seen ticket can never be delivered or acknowledged twice.
+ lastTicket=data.id;
  handling=true;
  try{
   // Decode owns a snapshot before WebCrypto. Never expose incoming mutable
@@ -32,6 +42,9 @@ self.addEventListener("message",async event=>{
   self.postMessage({kind:"oreslang-v2-receipt",id:data.id,ok:true});
  }catch{panic();return}
  finally{
+  // The decode procedure copies untrusted bytes before its crypto await;
+  // wipe the Worker-owned input buffer on both acceptance and rejection.
+  scrubOwnedFrame(data.frame);
   handling=false;
   if(stopPending&&!closed){closed=true;self.postMessage({kind:"oreslang-v2-stopped"})}
  }
