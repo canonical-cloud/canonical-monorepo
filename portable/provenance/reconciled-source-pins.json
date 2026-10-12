@@ -10,8 +10,8 @@
     },
     {
       "repository": "ores-truffle-oreslang/oreslang-wasm",
-      "headCommit": "034072aaa54357d5f1e34d4696e1c4dc6780e0ce",
-      "headTree": "1ac04e078d684b4f9c02535a4bb92e8fe4e6aa69",
+      "headCommit": "04906ea49db2ec109d7247cc16c7e130d68f23f8",
+      "headTree": "e37e290c5d60b28fac586f7d13319bcaeaab0d39",
       "count": 10
     }
   ],
@@ -126,7 +126,7 @@
     },
     {
       "path": "portable/wasm/tests/bridge-byte-budget.test.mjs",
-      "blobSha": "d9ec5e13ca0e09222fb24bc91754980aaa484312"
+      "blobSha": "b392c645c0246428b97523cb70f3ebffaddadb0c"
     },
     {
       "path": "portable/wasm/docs/SOURCE_SNAPSHOT_ADMISSION.md",
