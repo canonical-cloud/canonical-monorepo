@@ -1,0 +1,93 @@
+name: Oreslang native LLVM to browser exact-source release proof
+on:
+  push:
+    branches: [ci/oreslang-portable-release-20261011]
+permissions:
+  contents: read
+jobs:
+  native-to-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify all 50 exact source Git blobs before execution
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import cp from 'node:child_process';
+          const x=JSON.parse(fs.readFileSync('portable/provenance/reconciled-source-pins.json','utf8'));
+          if(x.files.length!==50||x.sources.length!==4||x.sources.some(s=>s.count<5))
+            throw Error('incomplete immutable source input matrix');
+          for(const f of x.files){
+            const h=cp.execFileSync('git',['hash-object',f.path],{encoding:'utf8'}).trim();
+            if(h!==f.blobSha)throw Error('Git blob mismatch: '+f.path);
+          }
+          console.log('FOUR_BACKENDS_50_EXACT_SOURCE_BLOBS_VERIFIED');
+          NODE
+      - name: Install LLVM native compiler and Wasm32 link dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq llvm-dev clang lld cmake
+      - name: Build real LLVM compiler from selected current main source
+        run: |
+          cmake -S portable/llvm -B "$RUNNER_TEMP/oreslang-native-build" \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DLLVM_DIR="$(llvm-config --cmakedir)"
+          cmake --build "$RUNNER_TEMP/oreslang-native-build" --parallel 2
+          "$RUNNER_TEMP/oreslang-native-build/oreslang-llvmc" --target=wasm32 \
+            portable/llvm/tests/fixtures/constant-main.ores > "$RUNNER_TEMP/current.ll"
+          grep -q 'target triple = "wasm32-unknown-unknown"' "$RUNNER_TEMP/current.ll"
+          grep -Eq 'define( dso_local)? i64 @main\(\)' "$RUNNER_TEMP/current.ll"
+          echo CURRENT_MAIN_ORESLANG_LLVM_COMPILER_EXECUTED
+      - name: Reject stand-in compilers and invalid native gate flags
+        run: node --test portable/conformance/tests/real-source-wasm-browser.test.mjs
+      - name: Run previously skipped real native Oreslang bridge integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ORESLANG_LLVM_COMPILER="$RUNNER_TEMP/oreslang-native-build/oreslang-llvmc"
+          export ORESLANG_LLVM_COMPILER_SHA256="$(sha256sum "$ORESLANG_LLVM_COMPILER" | cut -d' ' -f1)"
+          node --test portable/wasm/tests/bridge.test.mjs
+          echo REAL_NATIVE_ORESLANG_WASM_BRIDGE_OPT_IN_EXECUTED
+      - name: Compile real source through hardened bridge and verified browser loader
+        shell: bash
+        run: |
+          set -euo pipefail
+          compiler="$RUNNER_TEMP/oreslang-native-build/oreslang-llvmc"
+          bridge="$GITHUB_WORKSPACE/portable/wasm/scripts/compile-ores.mjs"
+          browser="$GITHUB_WORKSPACE/portable/browser/src/artifact.mjs"
+          for fixture in constant-main.ores forward-call-main.ores return-arithmetic.ores negative-literal.ores; do
+            expected=42
+            if test "$fixture" = "return-arithmetic.ores"; then expected=28; fi
+            source="$GITHUB_WORKSPACE/portable/llvm/tests/fixtures/$fixture"
+            output="$RUNNER_TEMP/native-$fixture.wasm"
+            node portable/conformance/bin/real-source-wasm-browser.mjs \
+              --compiler="$compiler" --compiler-sha256="$(sha256sum "$compiler" | cut -d' ' -f1)" \
+              --bridge="$bridge" --bridge-sha256="$(sha256sum "$bridge" | cut -d' ' -f1)" \
+              --source="$source" --source-sha256="$(sha256sum "$source" | cut -d' ' -f1)" \
+              --output="$output" \
+              --browser-module="$browser" --browser-module-sha256="$(sha256sum "$browser" | cut -d' ' -f1)" \
+              --expected-i64="$expected"
+          done
+          if "$compiler" --target=wasm32 portable/llvm/tests/fixtures/wrong-arity.ores \
+              > "$RUNNER_TEMP/wrong.ll" 2> "$RUNNER_TEMP/wrong.stderr"; then
+            echo "wrong arity unexpectedly accepted" >&2
+            exit 1
+          fi
+          grep -q "arity" "$RUNNER_TEMP/wrong.stderr"
+          echo FOUR_REAL_LLVM_SOURCE_WASM_BROWSER_POSITIVES_AND_ONE_NEGATIVE_EXECUTED
+      - name: Execute actual LLVM-compiled scalar Oreslang inside dedicated Worker
+        shell: bash
+        env:
+          ORE_REQUIRE_REAL_WORKER: '1'
+        run: |
+          set -euo pipefail
+          export ORE_REAL_WASM="$RUNNER_TEMP/native-constant-main.ores.wasm"
+          export ORE_REAL_MANIFEST="$ORE_REAL_WASM.artifact.json"
+          export ORE_BROWSER_WORKER_HOST="$GITHUB_WORKSPACE/portable/browser/src/worker-host.mjs"
+          export ORE_BROWSER_WORKER_SHIM="$GITHUB_WORKSPACE/portable/browser/tests/fixtures/node-worker-shim.mjs"
+          node --test portable/conformance/tests/real-compiled-worker.test.mjs
+          echo REAL_CURRENT_LLVM_SOURCE_ISOLATED_WORKER_EXECUTED
