@@ -27,6 +27,7 @@ export function createActorMessageTransport({
   fail("trusted dedicated Worker required");
  }
  let pending=0,ready=false,active=null,sealed=false,stopping=false,finished=false,seq=0,deadline;
+ let pumping=false,repump=false;
  const queue=[];
  let doneResolve,doneReject;
  const done=new Promise((resolve,reject)=>{doneResolve=resolve;doneReject=reject});
@@ -62,26 +63,34 @@ export function createActorMessageTransport({
  };
  const fatal=error=>complete(error instanceof Error?error:Error("isolated actor Worker failed"));
  const onError=()=>fatal(Error("isolated actor Worker failed"));
+ // Synchronous Worker adapters may deliver a receipt directly inside
+ // postMessage(). Trampoline the next mailbox turn rather than recursively
+ // entering pump() for every message (a capacity-sized stack overflow).
  function pump(){
-  if(finished||!ready||active!==null)return;
-  if(queue.length){
-   // Admission slots are ordered at send() call, not completion of async
-   // SHA-256. A faster later serialization cannot overtake an earlier send.
-   if(queue[0].frame===null)return;
-   const item=queue.shift();active=item;
-   try{
-    worker.postMessage({kind:"oreslang-v2-data",id:item.id,frame:item.frame});
-    // Fake/hostile adapters may issue receipts synchronously. Do not arm a
-    // timer after the matching receipt (or a terminal failure) was processed.
-    if(active===item)arm();
-   }catch{fatal(Error("actor DATA transport failure"))}
-  }else if(sealed&&pending===0&&!stopping){
-   stopping=true;
-   try{
-    worker.postMessage({kind:"oreslang-v2-control",action:"drain"});
-    if(!finished)arm();
-   }catch{fatal(Error("actor CONTROL transport failure"))}
-  }
+  if(pumping){repump=true;return}
+  pumping=true;
+  try{
+   do{
+    repump=false;
+    if(finished||!ready||active!==null)break;
+    if(queue.length){
+     // Sends reserve FIFO tickets before hashing. A later completed digest
+     // must not overtake an earlier pending admission.
+     if(queue[0].frame===null)break;
+     const item=queue.shift();active=item;
+     try{
+      worker.postMessage({kind:"oreslang-v2-data",id:item.id,frame:item.frame});
+      if(active===item&&!finished)arm();
+     }catch{fatal(Error("actor DATA transport failure"))}
+    }else if(sealed&&pending===0&&!stopping){
+     stopping=true;
+     try{
+      worker.postMessage({kind:"oreslang-v2-control",action:"drain"});
+      if(!finished)arm();
+     }catch{fatal(Error("actor CONTROL transport failure"))}
+    }
+   }while(repump&&!finished);
+  }finally{pumping=false}
  }
  const onMessage=event=>{
   if(finished)return;
@@ -99,13 +108,17 @@ export function createActorMessageTransport({
   if(m.kind==="oreslang-v2-stopped"&&stopping&&active===null&&pending===0){complete();return}
   fatal(Error("invalid actor worker lifecycle or receipt"));
  };
- worker.addEventListener("message",onMessage);
- worker.addEventListener("error",onError);
- worker.addEventListener("messageerror",onError);
  try{
+  worker.addEventListener("message",onMessage);
+  worker.addEventListener("error",onError);
+  worker.addEventListener("messageerror",onError);
   worker.postMessage({kind:"oreslang-v2-init",schemaId,descriptor});
   if(!ready&&!finished)arm();
- }catch{fatal(Error("actor Worker initialization failed"))}
+ }catch{
+  // Even a partially registered custom Worker adapter must never leak its
+  // carrier thread after failing initialization.
+  fatal(Error("actor Worker initialization failed"));
+ }
  return Object.freeze({
   async send(value){
    if(sealed||finished)fail("mailbox closed");
