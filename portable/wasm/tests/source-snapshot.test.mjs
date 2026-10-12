@@ -138,7 +138,7 @@ test("oversized sparse compiler rejected before reading executable bytes",async(
   const fd=await open(compiler,"wx");try{await fd.truncate(256*1024*1024+1)}finally{await fd.close()}
   await assert.rejects(
    compileOresToWasm({source,compiler,output:join(root,"guest.wasm")}),
-   /compiler exceeds 256 MiB executable budget/
+   /compiler exceeds (256 MiB executable budget|configured byte budget)/
   );
  }finally{await rm(root,{recursive:true,force:true})}
 });
