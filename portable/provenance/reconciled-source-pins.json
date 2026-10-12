@@ -114,11 +114,11 @@
     },
     {
       "path": "portable/wasm/tests/publication.test.mjs",
-      "blobSha": "aaa569faa2bfe6387c385a8ef341abbeb1e28978"
+      "blobSha": "2764922361eb1b98ae150ab3f853fbd89c1c55d5"
     },
     {
       "path": "portable/wasm/tests/source-snapshot.test.mjs",
-      "blobSha": "c2228e046d347a83deafb98db73b882e45fdb507"
+      "blobSha": "6fb868f6daf80b94be10f59475e03aa2c3d6eb00"
     },
     {
       "path": "portable/wasm/transport/messagepack-v2.mjs",
