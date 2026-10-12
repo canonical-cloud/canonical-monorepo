@@ -17,20 +17,24 @@ self.addEventListener("message",async event=>{
  if(!data||typeof data!=="object")return panic();
  if(!ready){
   if(data.kind!=="oreslang-v2-init"||typeof data.schemaId!=="string"||
-    typeof data.descriptor!=="string")return panic();
+    typeof data.descriptor!=="string"){scrubOwnedFrame(data.frame);return panic()}
   contract={schemaId:data.schemaId,descriptor:data.descriptor};
   ready=true;
   self.postMessage({kind:"oreslang-v2-ready"});
   return;
  }
- if(closed)return;
+ if(closed){scrubOwnedFrame(data.frame);return}
  if(data.kind==="oreslang-v2-control"&&data.action==="drain"){
   stopPending=true;
   if(!handling){closed=true;self.postMessage({kind:"oreslang-v2-stopped"})}
   return;
  }
  if(data.kind!=="oreslang-v2-data"||!Number.isSafeInteger(data.id)||
-   data.id<=lastTicket||handling||stopPending)return panic();
+   data.id<=lastTicket||handling||stopPending){
+  // Malformed, replayed, or concurrent DATA still arrived as an owned
+  // structured-clone buffer. Discard it before raising supervisor CONTROL.
+  scrubOwnedFrame(data.frame);return panic();
+ }
  // Admission gaps are permitted (failed serialization can consume an ID),
  // but a previously seen ticket can never be delivered or acknowledged twice.
  lastTicket=data.id;
