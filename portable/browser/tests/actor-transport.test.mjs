@@ -284,3 +284,51 @@ test("failed Worker listener registration terminates an allocated Worker",async(
  await assert.rejects(actor.send(["late",42n]),/mailbox closed/);
  assert.equal(terminated,1);
 });
+
+test("Worker-reported panic follows supervisor CONTROL path exactly once",async()=>{
+ const events=new Map();let panics=[],terminated=0;
+ const factory=()=>({
+  addEventListener(name,fn){events.set(name,fn)},
+  removeEventListener(name){events.delete(name)},
+  postMessage(message){
+   if(message.kind==="oreslang-v2-init")
+    queueMicrotask(()=>events.get("message")?.({data:{kind:"oreslang-v2-ready"}}));
+  },terminate(){terminated++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,
+  onSupervisorPanic(event){panics.push(event)}});
+ // Worker endpoint panic cannot be caught by the actor's own handler.
+ await Promise.resolve();
+ const onMessage=events.get("message");
+ onMessage({data:{kind:"oreslang-v2-panic"}});
+ onMessage({data:{kind:"oreslang-v2-panic"}});
+ await assert.rejects(actor.get_done(),/Worker reported panic/);
+ assert.equal(panics.length,1);
+ assert.equal(panics[0].type,"ACTOR_TRANSPORT_FAILURE");
+ assert.match(panics[0].reason,/Worker reported panic/);
+ assert.equal(terminated,1);
+ assert.equal(actor.pending,0);
+});
+
+test("native Worker exit is terminal even without an error event",async()=>{
+ const events=new Map();let reports=0,terminated=0;
+ const factory=()=>({
+  addEventListener(name,fn){events.set(name,fn)},
+  removeEventListener(name){events.delete(name)},
+  postMessage(m){
+   if(m.kind==="oreslang-v2-init")
+    queueMicrotask(()=>events.get("message")?.({data:{kind:"oreslang-v2-ready"}}));
+  },
+  terminate(){terminated++}
+ });
+ const actor=createActorMessageTransport({...spec,workerFactory:factory,
+  timeoutMs:5000,onSupervisorPanic(){reports++}});
+ await Promise.resolve();
+ const onExit=events.get("exit");
+ assert.equal(typeof onExit,"function");
+ onExit({code:137});
+ await assert.rejects(actor.get_done(),/exited unexpectedly/);
+ assert.equal(reports,1);
+ assert.equal(terminated,1);
+ await assert.rejects(actor.send(["after-exit",1n]),/mailbox closed/);
+});
