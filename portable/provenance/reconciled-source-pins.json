@@ -62,7 +62,7 @@
     },
     {
       "path": "portable/browser/src/messagepack-v2.mjs",
-      "blobSha": "53407bdc7b285a122fdf1a48845f74b18cfb92ce"
+      "blobSha": "4b5c4b22f276dadcb1cfac99f7eac00e2e45023f"
     },
     {
       "path": "portable/browser/src/worker-host.mjs",
