@@ -13,6 +13,18 @@
       "headCommit": "04906ea49db2ec109d7247cc16c7e130d68f23f8",
       "headTree": "e37e290c5d60b28fac586f7d13319bcaeaab0d39",
       "count": 10
+    },
+    {
+      "repository": "ores-truffle-oreslang/oreslang-source.llvm",
+      "headCommit": "641d227cd33e058999839bcf4b1871c31f222dd0",
+      "headTree": "9242774390c00478e111a358f33be32fe35332ef",
+      "count": 15
+    },
+    {
+      "repository": "ores-truffle-oreslang/oreslang-platform-conformance",
+      "headCommit": "4468c1f8243e60d66ed02d0404960e7a20a4bc67",
+      "headTree": "a79478fbf6e05401adbad0c6e22c2dab81e4de2a",
+      "count": 5
     }
   ],
   "files": [
@@ -131,6 +143,86 @@
     {
       "path": "portable/wasm/docs/SOURCE_SNAPSHOT_ADMISSION.md",
       "blobSha": "7ec1ad8b769ab2f685605837e0f897849c632457"
+    },
+    {
+      "path": "portable/llvm/CMakeLists.txt",
+      "blobSha": "2af591d6cdcefdebb30bf3e98e177b07bc27fd0a"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/backend/LlvmCodegen.cpp",
+      "blobSha": "f601b4b1d8396a4ced963667e08c065357ff1996"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/backend/LlvmCodegen.hpp",
+      "blobSha": "d31882669629d8145e5b6698e62e8c37b1e8a7e0"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/frontend/Parser.cpp",
+      "blobSha": "8a4e2d7a69cdd3e5dfa0287d9192566de13bf26b"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/frontend/Parser.hpp",
+      "blobSha": "20e918030f4ba535e4dea542f08880e2eb87d5fb"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/main.cpp",
+      "blobSha": "2c92ec8598693f48002fd5b5cfd7526dd6d93070"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/types/OwnershipCfg.hpp",
+      "blobSha": "a120ae202c7cfbe50735046d01991a22694555e6"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/types/OwnershipChecker.cpp",
+      "blobSha": "a15c45591a76921d5db17afdbe15a86f5d4a2210"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/types/OwnershipChecker.hpp",
+      "blobSha": "417fa18c9ff5448aebdda210fdbdd49c6fec222b"
+    },
+    {
+      "path": "portable/llvm/src/main/cpp/oreslang/types/OwnershipDropPlan.hpp",
+      "blobSha": "6b6b55164f1c9c776876887087e59a88e84f4447"
+    },
+    {
+      "path": "portable/llvm/tests/fixtures/constant-main.ores",
+      "blobSha": "0f1de3b2fbcabfa1f982270ce06e15ab3fffe436"
+    },
+    {
+      "path": "portable/llvm/tests/fixtures/forward-call-main.ores",
+      "blobSha": "2f7102e0c18876ca71650ae9efab25cc163f29c5"
+    },
+    {
+      "path": "portable/llvm/tests/fixtures/negative-literal.ores",
+      "blobSha": "012a5bee8c697ee57cd21ff1c522fcba8e4d4a0e"
+    },
+    {
+      "path": "portable/llvm/tests/fixtures/return-arithmetic.ores",
+      "blobSha": "a9871bd51ada5cacd49c0271c450be848d96955e"
+    },
+    {
+      "path": "portable/llvm/tests/fixtures/wrong-arity.ores",
+      "blobSha": "fbd0b9e28888c7f21dbf91fa676cbb849e389c2f"
+    },
+    {
+      "path": "portable/conformance/bin/real-source-wasm-browser.mjs",
+      "blobSha": "3d7a84566d4e6430e8b604a2ab0e8a71cb3d7b98"
+    },
+    {
+      "path": "portable/conformance/bin/wasm-core-conformance.mjs",
+      "blobSha": "df44e000e1be3886a4c3ca85f43e551f6ec49730"
+    },
+    {
+      "path": "portable/conformance/src/wasm-guest-child.mjs",
+      "blobSha": "fe7a5814fbfe876bf391106496687aa76a984ba5"
+    },
+    {
+      "path": "portable/conformance/tests/real-compiled-worker.test.mjs",
+      "blobSha": "6ce284a2ae9f14e8bc5828ba877272a32cb12d84"
+    },
+    {
+      "path": "portable/conformance/tests/real-source-wasm-browser.test.mjs",
+      "blobSha": "dbbbdd44ea1ec9ebdbf845207c854a24df4216f3"
     }
   ]
 }
