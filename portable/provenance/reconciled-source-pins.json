@@ -12,7 +12,7 @@
       "repository": "ores-truffle-oreslang/oreslang-wasm",
       "headCommit": "04906ea49db2ec109d7247cc16c7e130d68f23f8",
       "headTree": "e37e290c5d60b28fac586f7d13319bcaeaab0d39",
-      "count": 10
+      "count": 11
     },
     {
       "repository": "ores-truffle-oreslang/oreslang-source.llvm",
@@ -223,6 +223,10 @@
     {
       "path": "portable/conformance/tests/real-source-wasm-browser.test.mjs",
       "blobSha": "dbbbdd44ea1ec9ebdbf845207c854a24df4216f3"
+    },
+    {
+      "path": "portable/wasm/examples/native-int.ores",
+      "blobSha": "8da5552e4e58686cef50475b9504216b075c60f7"
     }
   ]
 }
