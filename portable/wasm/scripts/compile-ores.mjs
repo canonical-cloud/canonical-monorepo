@@ -5,11 +5,34 @@
  */
 import {spawnSync} from "node:child_process";
 import {createHash} from "node:crypto";
-import {readFile,writeFile,mkdir,mkdtemp,rm,rename} from "node:fs/promises";
+import {readFile,writeFile,mkdir,mkdtemp,rm,rename,open} from "node:fs/promises";
 import {dirname,resolve,isAbsolute,join} from "node:path";
 import {fileURLToPath} from "node:url";
 const projectRoot=resolve(dirname(fileURLToPath(import.meta.url)),"..");
 const sha=bytes=>createHash("sha256").update(bytes).digest("hex");
+const MAX_SOURCE_BYTES=1024*1024,MAX_COMPILER_BYTES=256*1024*1024,MAX_WASM_BYTES=16*1024*1024;
+// Open the pathname exactly once and read in bounded chunks. A preflight
+// stat(path) followed by readFile(path) leaves a rename/size TOCTOU gap and
+// may allocate an unbounded input before noticing its size.
+async function readBounded(path,limit,label){
+ const fd=await open(path,"r");
+ try{
+  const st=await fd.stat();
+  if(!st.isFile()||st.size<1||st.size>limit)
+   throw Error(label+" exceeds configured byte budget or is not a regular file");
+  const chunks=[];let total=0;
+  for(;;){
+   const buf=Buffer.allocUnsafe(Math.min(65536,limit-total+1));
+   const {bytesRead}=await fd.read(buf,0,buf.length,null);
+   if(bytesRead===0)break;
+   total+=bytesRead;
+   if(total>limit)throw Error(label+" exceeds configured byte budget");
+   chunks.push(buf.subarray(0,bytesRead));
+  }
+  if(total===0)throw Error(label+" is empty");
+  return Buffer.concat(chunks,total);
+ }finally{await fd.close()}
+}
 function rejectStartSection(bytes){
  let i=8;
  const u32=()=>{let value=0;for(let j=0;j<5;j++){
@@ -44,8 +67,10 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
    throw Error("output or artifact metadata path overlaps a compiler/source input");
  }
  if(!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(exportName))throw Error("unsupported export name");
- const [sourceBytes,compilerBytes]=await Promise.all([readFile(source),readFile(compiler)]);
- if(sourceBytes.length>1024*1024)throw Error("source exceeds 1 MiB compiler bridge budget");
+ const [sourceBytes,compilerBytes]=await Promise.all([
+  readBounded(source,MAX_SOURCE_BYTES,"source"),
+  readBounded(compiler,MAX_COMPILER_BYTES,"compiler")
+ ]);
  const actualCompilerHash=sha(compilerBytes);
  if(compilerSha256!==undefined&&compilerSha256!==actualCompilerHash)throw Error("compiler binary SHA-256 does not match pinned hash");
  if(environment!==undefined&&!["browser","edge-js","edge-wasi"].includes(environment))
@@ -86,7 +111,7 @@ export async function compileOresToWasm({compiler,source,output,exportName="main
    "-Wl,--no-entry","-Wl,--export="+exportName,
    "-Wl,--initial-memory=131072","-Wl,--max-memory=131072",
    "-o",provisional,"-"],{input:ir});
- const wasm=await readFile(provisional);
+ const wasm=await readBounded(provisional,MAX_WASM_BYTES,"linked Wasm");
  if(!WebAssembly.validate(wasm))throw Error("linker emitted invalid core Wasm");
  rejectStartSection(wasm);
  const module=new WebAssembly.Module(wasm);
