@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           test "$(git hash-object portable/conformance/bin/verify-portable-release-mirror.mjs)" = "4d7a2b9543642c07a189b2b3b4f900cfe54ac87a"
           test "$(git hash-object portable/conformance/tests/portable-release-mirror.test.mjs)" = "16d08ef74143c531327f5b04171a54ed5b9bad65"
-          test "$(git hash-object portable/conformance/evidence/portable-native-release-pins-20261011.json)" = "b1ab57fbe3a18faaee957ba464dc5b2464d6273c"
+          test "$(git hash-object portable/conformance/evidence/portable-native-release-pins-20261011.json)" = "9bfcfdccf3f522cc223d1058db7cb2a3c1b74488"
           cmp portable/provenance/reconciled-source-pins.json portable/conformance/evidence/portable-native-release-pins-20261011.json
           node --test portable/conformance/tests/portable-release-mirror.test.mjs
           node portable/conformance/bin/verify-portable-release-mirror.mjs \
