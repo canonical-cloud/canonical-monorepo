@@ -166,4 +166,12 @@ export async function decodeActorMessageV2({schemaId,descriptor,bytes,maxBytes=M
   snapshot.fill(0);
  }
 }
+// Validate the entire schema grammar synchronously at actor INIT. Length
+// and ASCII checks alone would falsely acknowledge a malformed descriptor
+// before the first DATA frame arrives. Both browser and Wasm hosts use the
+// same bounded recursive shape parser.
+export function validateActorMessageV2Contract({schemaId,descriptor}={}){
+ schema(schemaId,descriptor);
+ return true;
+}
 export const MESSAGEPACK_V2_LIMITS=Object.freeze({maxBytes:MAX_BYTES,maxNodes:MAX_NODES,maxDepth:MAX_DEPTH,maxDescriptorBytes:MAX_DESC});
