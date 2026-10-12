@@ -1,0 +1,21 @@
+name: Oreslang detached frame cleanup exact-source audit
+on:
+  push:
+    branches: [ci/oreslang-portable-release-20261011]
+permissions:
+  contents: read
+jobs:
+  actor-transport-hardening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Validate exact new Browser Git source blobs
+        run: |
+          test "$(git hash-object portable/browser/src/actor-transport.mjs)" = "7b6bb4454fcffe2a3a6c5cf99a0ca22f3e9d8690"
+          test "$(git hash-object portable/browser/tests/actor-transport.test.mjs)" = "1d9e7d274d71c31f6f2ac120f55d04ff44dd8e17"
+      - name: Run complete isolated Worker actor transport regressions
+        run: node --test portable/browser/tests/actor-transport.test.mjs
