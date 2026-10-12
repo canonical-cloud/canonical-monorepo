@@ -134,19 +134,36 @@ export async function encodeActorMessageV2({schemaId,descriptor,value,maxBytes=M
  limit(maxBytes);const t=schema(schemaId,descriptor),w=new Writer(maxBytes);
  w.array(4);w.integer(2n);w.string(t.id);
  // Snapshot serialized payload and schema before crossing async hashing boundary.
- const payload=new Writer(maxBytes);writeValue(payload,t.type,value);
- const bytes=payload.finish(),hash=await digest(t.desc);
- w.binary(hash);w.put(bytes);return w.finish();
+ const payload=new Writer(maxBytes);
+ try{
+  writeValue(payload,t.type,value);
+  const bytes=payload.finish();
+  try{
+   const hash=await digest(t.desc);
+   w.binary(hash);w.put(bytes);return w.finish();
+  }finally{bytes.fill(0)}
+ }finally{
+  // Encoded payload fragments and intermediate envelopes are owned by this
+  // encoder. Clear each copy on success AND on an asynchronous digest failure.
+  for(const part of payload.parts)part.fill(0);
+  for(const part of w.parts)part.fill(0);
+ }
 }
 export async function decodeActorMessageV2({schemaId,descriptor,bytes,maxBytes=MAX_BYTES}={}){
  limit(maxBytes);const t=schema(schemaId,descriptor),snapshot=byteCopy(bytes,maxBytes);
- const r=new Reader(snapshot);
- if(r.array()!==4||r.integer()!==2n)err("version/envelope mismatch");
- if(r.string()!==t.id)err("schema ID mismatch");
- const received=r.hash(),expected=await digest(t.desc);
- if(!expected.every((v,i)=>v===received[i]))err("schema SHA-256 mismatch");
- const value=readValue(r,t.type);
- if(r.i!==snapshot.length)err("trailing bytes");
- return value;
+ try{
+  const r=new Reader(snapshot);
+  if(r.array()!==4||r.integer()!==2n)err("version/envelope mismatch");
+  if(r.string()!==t.id)err("schema ID mismatch");
+  const received=r.hash(),expected=await digest(t.desc);
+  if(!expected.every((v,i)=>v===received[i]))err("schema SHA-256 mismatch");
+  const value=readValue(r,t.type);
+  if(r.i!==snapshot.length)err("trailing bytes");
+  return value;
+ }finally{
+  // The caller owns the input bytes; only the decoder-owned snapshot is
+  // destroyed, including malformed frames and asynchronous digest failures.
+  snapshot.fill(0);
+ }
 }
 export const MESSAGEPACK_V2_LIMITS=Object.freeze({maxBytes:MAX_BYTES,maxNodes:MAX_NODES,maxDepth:MAX_DEPTH,maxDescriptorBytes:MAX_DESC});
