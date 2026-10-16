@@ -55,7 +55,8 @@ test("private Cargo token only exists in fetch step, not compiled or cached on h
   assert.doesNotMatch(workflow, /https:\/\/[^\s/"']+:[^\s@"']+@github\.com\//);
 });
 test("public frontends are mandatory on independent runner and cannot compile private Rust", () => {
-  assert.ok(separateStack.includes(mainOnly));
+  assert.match(separateStack, /github\.repository == 'canonical-cloud\/canonical-monorepo'/);
+  assert.match(separateStack, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
   assert.match(privateCargo, /needs: \[test, isolated-stack-build\]/);
   assert.doesNotMatch(separateStack, /needs: integration-build/);
   assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
