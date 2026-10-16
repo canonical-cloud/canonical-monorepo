@@ -154,10 +154,20 @@ test("full-stack build includes browser clients and both Rust services", () => {
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
 
   const ci = read(".github/workflows/ci.yml");
-  assert.match(ci, /cargo test --locked/);
-  assert.match(ci, /--workspace --all-targets/);
+  const offline = read(".github/scripts/offline-rust-review.sh");
+  assert.match(ci, /isolated-stack-build:/);
+  assert.match(ci, /needs: \[test, isolated-stack-build\]/);
+  assert.match(ci, /for mode in lock fmt clippy test release; do/);
+  assert.match(ci, /bash \.github\/scripts\/build-public-frontends\.sh/);
+  assert.match(offline, /cargo build --manifest-path \/src\/Cargo\.toml --locked --release --workspace --bins/);
+  assert.match(offline, /bash \/scratch\/site\/scripts\/stack-smoke\.sh/);
+  assert.match(ci, /for app in web api; do/);
+  assert.match(ci, /for mode in lock fmt clippy test; do/);
+  assert.match(ci, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
   assert.match(ci, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
-  assert.match(ci, /--all-targets --all-features/);
+  assert.match(offline, /cargo test --manifest-path \/src\/Cargo\.toml --workspace --all-targets --locked/);
+  assert.match(offline, /cargo test --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
+  assert.match(offline, /cargo clippy --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
 });
 
 test("pinned API preserves quote, auth, declarative Postgres, and package boundaries", () => {
@@ -420,48 +430,46 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+test("every pinned application preserves a complete, unambiguous agent command-safety policy", () => {
   const repositories = [
     "",
     ...parseGitmodules()
-      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .filter((module) => module.private !== "true" ||
+        existsSync(path.join(root, module.path, "agents.md")) ||
+        existsSync(path.join(root, module.path, "AGENTS.md")))
       .map((module) => module.path),
   ];
 
   for (const repository of repositories) {
     const label = repository || ".";
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
-    const canonical = read(path.join(repository, "agents.md"));
+    const lowercasePath = path.join(root, repository, "agents.md");
+    const uppercasePath = path.join(root, repository, "AGENTS.md");
+    const hasLowercase = existsSync(lowercasePath);
+    const hasUppercase = existsSync(uppercasePath);
 
-    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
-    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
-    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
+    assert.ok(hasLowercase || hasUppercase, label + " has no agent safety policy");
+    const lowercase = hasLowercase ? read(path.join(repository, "agents.md")) : null;
+    const uppercase = hasUppercase ? read(path.join(repository, "AGENTS.md")) : null;
 
-    // Lowercase `agents.md` is the required authority. Some app repositories
-    // intentionally omit the optional uppercase compatibility pointer; Linux
-    // CI must not infer that path from macOS's case-insensitive filesystem.
-    if (!existsSync(pointerPath)) {
-      continue;
+    // Organizational policy accepts AGENTS.md as canonical, and requires
+    // identical bytes if a repository tracks both spellings. The monorepo
+    // itself predates that policy and has an established uppercase pointer.
+    if (lowercase !== null && uppercase !== null && lowercase !== uppercase) {
+      assert.equal(repository, "",
+        label + " has divergent uppercase/lowercase agent instructions");
+      assert.match(uppercase, /agents\.md/,
+        "the monorepo's uppercase compatibility file must point to agents.md");
+      assert.doesNotMatch(uppercase,
+        /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
+        "the pointer must not duplicate or contradict the canonical policy");
     }
-
-    const pointer = read(path.join(repository, "AGENTS.md"));
-    const samePhysicalFile =
-      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
-      statSync(canonicalPath).ino === statSync(pointerPath).ino;
-    if (samePhysicalFile) {
-      // Case-insensitive filesystems cannot materialize both tracked names.
-      // The indexed repository still carries the uppercase pointer; locally,
-      // verify the canonical lowercase policy instead of treating the alias as
-      // independent content.
-      continue;
-    }
-
-    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
-    assert.doesNotMatch(
-      pointer,
-      /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
-      `${label}/AGENTS.md must not duplicate canonical policy`,
-    );
+    const policy = lowercase ?? uppercase;
+    assert.match(policy, /Command safety/i, label + " needs Command safety guidance");
+    assert.match(policy, /git rm/, label + " must provide safe tracked removal guidance");
+    assert.match(policy, /git mv/, label + " must provide safe tracked move guidance");
+    assert.match(policy, /git reset/, label + " must govern destructive resets");
+    assert.match(policy, /git stash/, label + " must govern stashing");
+    assert.match(policy, /git push --force|force.push/i,
+      label + " must govern forced pushes");
   }
 });
