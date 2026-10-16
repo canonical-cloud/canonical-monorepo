@@ -62,3 +62,11 @@ test("no private Cargo secret is embedded in Git URLs or persistent config", () 
   assert.doesNotMatch(source, /https:\/\/\$\{\{[^\n]+\}\}@github\.com\//);
   assert.doesNotMatch(source, /git\s+config[^\n]*(?:extraheader|credential\.helper)[^\n]*PRIVATE_CARGO_TOKEN/i);
 });
+
+test("public frontend builder never invokes Cargo, handles private dependencies or uploads artifacts", async () => {
+  const helper = await readFile(new URL("../.github/scripts/build-public-frontends.sh", import.meta.url), "utf8");
+  assert.match(helper, /npm ci && npm run build/);
+  assert.match(helper, /npm ci && npm run typecheck && npm test && npm run build/);
+  assert.doesNotMatch(helper, /\bcargo\b|\bPRIVATE_CARGO_TOKEN\b|\bGIT_ASKPASS\b|docker\s+(?:build|push)|gh release/);
+  assert.doesNotMatch(helper, /actions\/upload-artifact|\.\/build\.sh/);
+});
