@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: "22"
       - name: Validate credential isolation without private source or secrets
-        run: node --test tests/ci-private-cargo-askpass.test.mjs tests/offline-rust-review.test.mjs tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
+        run: node --test tests/ci-private-cargo-askpass.test.mjs tests/offline-rust-review.test.mjs tests/public-frontend-artifact.test.mjs tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
 
   offline-container-smoke:
     runs-on: ubuntu-24.04
