@@ -57,6 +57,7 @@ if docker run --rm --pull=never \
   -e RUSTUP_HOME=/usr/local/rustup \
   -e HOME=/scratch \
   -e REVIEW_MODE="$mode" \
+  -e REVIEW_APP="$app" \
   --workdir /src \
   --entrypoint /bin/bash "$image" -euo pipefail -c '
     # Cargo creates package lock/metadata files in CARGO_HOME, which must
@@ -78,9 +79,19 @@ if docker run --rm --pull=never \
         ;;
       fmt) cargo fmt --all --check --manifest-path /src/Cargo.toml ;;
       clippy)
-        cargo clippy --manifest-path /src/Cargo.toml --workspace --all-targets --locked -- -D warnings
+        if test "$REVIEW_APP" = api; then
+          cargo clippy --manifest-path /src/Cargo.toml --all-targets --all-features --locked -- -D warnings
+        else
+          cargo clippy --manifest-path /src/Cargo.toml --workspace --all-targets --locked -- -D warnings
+        fi
         ;;
-      test) cargo test --manifest-path /src/Cargo.toml --workspace --all-targets --locked ;;
+      test)
+        if test "$REVIEW_APP" = api; then
+          cargo test --manifest-path /src/Cargo.toml --all-targets --all-features --locked
+        else
+          cargo test --manifest-path /src/Cargo.toml --workspace --all-targets --locked
+        fi
+        ;;
       *) exit 2 ;;
     esac
   ' >"$out/private-build.log" 2>&1; then
