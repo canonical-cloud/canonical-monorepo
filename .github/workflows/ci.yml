@@ -114,6 +114,12 @@ jobs:
           }
           RUST
           done
+          # The API release path must compile an actual binary, not merely a
+          # library/test fixture. No private source or credentials are present.
+          mkdir -p "$workspace/apps/canonical-api-server.rs/src/bin"
+          cat >"$workspace/apps/canonical-api-server.rs/src/bin/canonical-api-server.rs" <<'RUST'
+          fn main() {}
+          RUST
           export GITHUB_WORKSPACE_ORIGINAL="$GITHUB_WORKSPACE"
           export GITHUB_WORKSPACE="$workspace"
           export CANONICAL_PRIVATE_CARGO_CACHE="$cache"
@@ -123,6 +129,7 @@ jobs:
               bash "$GITHUB_WORKSPACE_ORIGINAL/.github/scripts/offline-rust-review.sh" "$project" "$mode"
             done
           done
+          bash "$GITHUB_WORKSPACE_ORIGINAL/.github/scripts/offline-rust-review.sh" api release
   git-source-admission:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
