@@ -203,6 +203,23 @@ jobs:
             cmp "$app/Cargo.lock" "$RUNNER_TEMP/$(basename "$app").original.lock"
             echo "Verified generated Cargo.lock parity: $app"
           done
+      - name: Install pinned cargo-audit without private credentials
+        shell: bash
+        run: cargo +1.95.0 install cargo-audit --locked --version 0.22.2
+      - name: Validate rkyv reachability and audit both Rust lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd apps/canonical-web-server.rs
+            bash scripts/check-rkyv-active-graph.sh
+            cargo audit --deny unmaintained --deny unsound --deny yanked \
+              --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235
+          )
+          (
+            cd apps/canonical-api-server.rs
+            cargo audit --deny unmaintained --deny unsound --deny yanked
+          )
       - name: Format, Clippy and Rust tests (no credentials)
         env:
           CARGO_NET_OFFLINE: "true"
