@@ -38,7 +38,7 @@ test("private sidecar job runs only on main push in source repository", () => {
 test("private Cargo token only exists in fetch step, not compiled or cached on host", () => {
   assert.equal((workflow.match(/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/g) || []).length, 1);
   const at = privateCargo.indexOf("      - name: Fetch immutable private Rust dependencies");
-  const testsAt = privateCargo.indexOf("      - name: Verify Rust lockfiles and compile without token", at);
+  const testsAt = privateCargo.indexOf("      - name: Verify Rust lockfiles, full target matrix, and isolated release smoke", at);
   assert.ok(at >= 0 && testsAt > at);
   const fetch = privateCargo.slice(at, testsAt);
   const execution = privateCargo.slice(testsAt);
@@ -54,12 +54,32 @@ test("private Cargo token only exists in fetch step, not compiled or cached on h
   assert.doesNotMatch(privateCargo, /Swatinem\/rust-cache|shared-cache|run: \.\/build\.sh/);
   assert.doesNotMatch(workflow, /https:\/\/[^\s/"']+:[^\s@"']+@github\.com\//);
 });
-test("full stack runs on fresh protected-main runner without access to dependency cache", () => {
-  assert.ok(separateStack.includes(mainOnly));
-  assert.match(separateStack, /needs: integration-build/);
-  assert.match(separateStack, /run: \|[\s\S]*?\.\/build\.sh/);
-  assert.match(separateStack, /bash scripts\/stack-smoke\.sh/);
-  assert.doesNotMatch(separateStack, /secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
+test("public frontends are mandatory on independent runner and cannot compile private Rust", () => {
+  assert.match(separateStack, /github\.repository == 'canonical-cloud\/canonical-monorepo'/);
+  assert.match(separateStack, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
+  assert.match(privateCargo, /needs: \[test, isolated-stack-build\]/);
+  assert.doesNotMatch(separateStack, /needs: integration-build/);
+  assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
+  assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
+  assert.match(separateStack, /actions\/upload-artifact@[a-f0-9]{40}/);
+});
+test("only public frontend assets are uploaded, no Rust binaries or cache", () => {
+  assert.match(privateCargo, /for mode in lock fmt clippy test release; do/);
+  assert.match(privateCargo, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
+  assert.match(separateStack, /actions\/upload-artifact@[a-f0-9]{40}/);
+  assert.match(separateStack, /canonical-public-frontends\.tar\.gz/);
+  assert.doesNotMatch(privateCargo, /actions\/upload-artifact|target\/release|\.\/build\.sh/);
+  assert.doesNotMatch(workflow, /gh release upload/);
+});
+test("public asset download and strict archive verification occur before credentialed Cargo fetch", () => {
+  const fetched = privateCargo.indexOf("      - name: Fetch immutable private Rust dependencies");
+  const downloaded = privateCargo.indexOf("      - name: Download exact-run public frontend artifact");
+  const verified = privateCargo.indexOf("      - name: Validate public artifact and source commit");
+  assert.ok(downloaded > 0 && downloaded < verified && verified < fetched);
+  assert.match(privateCargo.slice(downloaded, fetched), /verify-public-frontends\.py/);
+  assert.match(privateCargo.slice(downloaded, fetched), /"\$output" "\$GITHUB_SHA"/);
+  assert.doesNotMatch(privateCargo, /bash \.github\/scripts\/build-public-frontends\.sh/);
+  assert.doesNotMatch(privateCargo.slice(fetched), /npm ci|npm install|actions\/download-artifact/);
 });
 test("missing sidecar credential fails closed only after exact pinned SHA is captured", () => {
   assert.match(privateSidecar, /- name: Require approved read-only private sidecar credential/);

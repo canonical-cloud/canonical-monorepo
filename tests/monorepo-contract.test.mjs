@@ -156,7 +156,11 @@ test("full-stack build includes browser clients and both Rust services", () => {
   const ci = read(".github/workflows/ci.yml");
   const offline = read(".github/scripts/offline-rust-review.sh");
   assert.match(ci, /isolated-stack-build:/);
-  assert.match(ci, /needs: integration-build/);
+  assert.match(ci, /needs: \[test, isolated-stack-build\]/);
+  assert.match(ci, /for mode in lock fmt clippy test release; do/);
+  assert.match(ci, /bash \.github\/scripts\/build-public-frontends\.sh/);
+  assert.match(offline, /cargo build --manifest-path \/src\/Cargo\.toml --locked --release --workspace --bins/);
+  assert.match(offline, /bash \/scratch\/site\/scripts\/stack-smoke\.sh/);
   assert.match(ci, /for app in web api; do/);
   assert.match(ci, /for mode in lock fmt clippy test; do/);
   assert.match(ci, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
