@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: "22"
       - name: Validate credential isolation without private source or secrets
-        run: node --test tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-candidate-admission.test.mjs tests/trusted-candidate-workflow.test.mjs
+        run: node --test tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs tests/trusted-candidate-workflow.test.mjs
 
   git-source-admission:
     runs-on: ubuntu-24.04
