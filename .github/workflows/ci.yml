@@ -162,19 +162,7 @@ jobs:
             exit 1
           fi
           askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
-          cat >"$askpass" <<'SH'
-          #!/bin/sh
-          case "$1" in
-            *github.com*) ;;
-            *) exit 1 ;;
-          esac
-          case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          SH
-          chmod 700 "$askpass"
+          install -m 0700 scripts/ci-private-cargo-askpass.sh "$askpass"
           trap 'rm -f -- "$askpass"' EXIT
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
