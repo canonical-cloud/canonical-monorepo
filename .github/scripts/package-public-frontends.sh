@@ -3,7 +3,7 @@
 set -euo pipefail
 root="${GITHUB_WORKSPACE:?}"
 tmp="${RUNNER_TEMP:?}"
-sha="${GITHUB_SHA:?}"
+sha="${CANONICAL_SOURCE_SHA:-${GITHUB_SHA:?}}"
 [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::invalid source SHA" >&2; exit 1; }
 stage="$(mktemp -d "$tmp/canonical-public-stage.XXXXXXXX")"
 trap 'rm -rf -- "$stage"' EXIT
