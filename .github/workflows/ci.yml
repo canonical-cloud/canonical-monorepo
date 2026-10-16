@@ -227,9 +227,20 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-      - name: Build public frontend assets before private dependency access
+      - name: Download exact-run public frontend artifact before private dependency access
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: canonical-public-frontends-${{ github.sha }}
+          path: ${{ runner.temp }}/canonical-public-download
+      - name: Validate public artifact and source commit before private dependency access
         shell: bash
-        run: bash .github/scripts/build-public-frontends.sh
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/canonical-public-verified"
+          python3 .github/scripts/verify-public-frontends.py \
+            "$RUNNER_TEMP/canonical-public-download/canonical-public-frontends.tar.gz" \
+            "$output" "$GITHUB_SHA"
+          echo "CANONICAL_PUBLIC_ASSETS_ROOT=$output" >> "$GITHUB_ENV"
       - name: Prepare full Rust tools and isolated private cache before credential
         shell: bash
         run: |
@@ -315,6 +326,19 @@ jobs:
         env:
           GIT_TERMINAL_PROMPT: "0"
         run: bash .github/scripts/build-public-frontends.sh
+      - name: Package strictly public frontend dist files and SHA
+        shell: bash
+        env:
+          CANONICAL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash .github/scripts/package-public-frontends.sh
+      - name: Upload only public frontend archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: canonical-public-frontends-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/canonical-public-frontends.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   private-sidecar-contract:
     # A private checkout is allowed only for a trusted push to protected main.
