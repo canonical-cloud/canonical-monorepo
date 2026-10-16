@@ -8,11 +8,16 @@ base_id="$(docker image inspect --format '{{.Id}}' "$base")"
   echo "::error::unverified Rust base image identity" >&2
   exit 1
 }
-# FROM resolves the already-downloaded exact local image ID, not the tag.
-if ! docker build --pull=false --build-arg "BASE_ID=$base_id" \
+# BuildKit treats a bare image ID in FROM as a registry repository.
+# Tag the already-verified local image, then disable image pulling in build.
+# We inspect that the temporary tag still points to the audited base ID.
+base_ref='canonical-rust-base:local'
+docker tag "$base_id" "$base_ref"
+test "$(docker image inspect --format '{{.Id}}' "$base_ref")" = "$base_id"
+if ! docker build --pull=false --build-arg "BASE_REF=$base_ref" \
   --tag canonical-rust-reviewed:local - >"$RUNNER_TEMP/canonical-rust-tools-build.log" 2>&1 <<'DOCKERFILE'
-ARG BASE_ID
-FROM ${BASE_ID}
+ARG BASE_REF
+FROM ${BASE_REF}
 RUN rustup component add rustfmt clippy
 DOCKERFILE
 then
