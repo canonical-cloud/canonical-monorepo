@@ -3,7 +3,7 @@
 # Docker sockets, or reusable outputs. Do not publish build-script logs.
 set -euo pipefail
 if [[ $# -ne 2 ]]; then
-  echo "::error::usage: offline-rust-review.sh web|api lock|fmt|clippy|test|rkyv" >&2
+  echo "::error::usage: offline-rust-review.sh web|api lock|fmt|clippy|test|release|rkyv" >&2
   exit 2
 fi
 app="$1"
@@ -14,7 +14,7 @@ case "$app" in
   *) echo "::error::unapproved application" >&2; exit 2 ;;
 esac
 case "$mode" in
-  lock|fmt|clippy|test) ;;
+  lock|fmt|clippy|test|release) ;;
   rkyv) [[ "$app" == web ]] || { echo "::error::rkyv proof is web-only" >&2; exit 2; } ;;
   *) echo "::error::unapproved Cargo operation" >&2; exit 2 ;;
 esac
@@ -49,6 +49,7 @@ if docker run --rm --pull=never \
   --tmpfs /tmp:rw,nosuid,nodev,size=256m \
   --tmpfs /scratch:rw,nosuid,nodev,size=1g \
   --mount "type=bind,source=$source_dir,target=/src,readonly" \
+  --mount "type=bind,source=$GITHUB_WORKSPACE,target=/review-repo,readonly" \
   --mount "type=bind,source=$cache,target=/cargo-cache,readonly" \
   --mount "type=bind,source=$out,target=/out" \
   -e CARGO_HOME=/scratch/cargo \
@@ -92,6 +93,38 @@ if docker run --rm --pull=never \
           cargo test --manifest-path /src/Cargo.toml --all-targets --all-features --locked
         else
           cargo test --manifest-path /src/Cargo.toml --workspace --all-targets --locked
+        fi
+        ;;
+      release)
+        if test "$REVIEW_APP" = api; then
+          cargo build --manifest-path /src/Cargo.toml --locked --release --bin canonical-api-server
+          test -x /out/target/release/canonical-api-server
+        else
+          cargo build --manifest-path /src/Cargo.toml --locked --release --workspace --bins
+          test -x /out/target/release/canonical-web-server
+          test -x /out/target/release/canonical-session-revoker
+
+          # Run the existing release-stack runtime smoke inside THIS sandbox,
+          # while its network namespace remains disconnected from the host.
+          # Only public build outputs and the reviewed smoke scripts are used.
+          test -f /review-repo/apps/canonical-marketing-site.web/dist/index.html
+          test -d /review-repo/apps/canonical-web-server.rs/client/dist
+          test -f /review-repo/apps/canonical-interfaces/schema/api.schema.json
+          command -v node >/dev/null
+          command -v curl >/dev/null
+          mkdir -p /scratch/site/scripts
+          mkdir -p /scratch/site/apps/canonical-web-server.rs/target/release
+          mkdir -p /scratch/site/apps/canonical-web-server.rs/client
+          mkdir -p /scratch/site/apps/canonical-marketing-site.web
+          mkdir -p /scratch/site/apps/canonical-interfaces/schema
+          cp /review-repo/scripts/stack-smoke.sh /scratch/site/scripts/stack-smoke.sh
+          cp /review-repo/scripts/validate-against-schema.mjs /scratch/site/scripts/validate-against-schema.mjs
+          ln -s /out/target/release/canonical-web-server /scratch/site/apps/canonical-web-server.rs/target/release/canonical-web-server
+          ln -s /out/target/release/canonical-session-revoker /scratch/site/apps/canonical-web-server.rs/target/release/canonical-session-revoker
+          ln -s /review-repo/apps/canonical-web-server.rs/client/dist /scratch/site/apps/canonical-web-server.rs/client/dist
+          ln -s /review-repo/apps/canonical-marketing-site.web/dist /scratch/site/apps/canonical-marketing-site.web/dist
+          ln -s /review-repo/apps/canonical-interfaces/schema/api.schema.json /scratch/site/apps/canonical-interfaces/schema/api.schema.json
+          bash /scratch/site/scripts/stack-smoke.sh
         fi
         ;;
       rkyv)
