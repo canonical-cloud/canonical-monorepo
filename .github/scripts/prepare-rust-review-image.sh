@@ -18,7 +18,10 @@ if ! docker build --pull=false --build-arg "BASE_REF=$base_ref" \
   --tag canonical-rust-reviewed:local - >"$RUNNER_TEMP/canonical-rust-tools-build.log" 2>&1 <<'DOCKERFILE'
 ARG BASE_REF
 FROM ${BASE_REF}
-RUN rustup component add rustfmt clippy
+RUN rustup component add rustfmt clippy \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends nodejs curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 DOCKERFILE
 then
   echo "::error::failed to prepare complete Rust review toolchain before credentials" >&2
@@ -38,6 +41,8 @@ docker run --rm --pull=never --network none --read-only --cap-drop ALL \
     cargo --version
     cargo fmt --version
     cargo clippy --version
+    node --version
+    curl --version >/dev/null
   '
 echo "RUST_SMOKE_IMAGE=$id" >> "$GITHUB_ENV"
 echo "CANONICAL_RUST_IMAGE_ID=$id" >> "$GITHUB_ENV"
