@@ -193,7 +193,7 @@ jobs:
         run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
 
   integration-build:
-    needs: test
+    needs: [test, isolated-stack-build]
     # Only a reviewed push to protected main may expose private Cargo credentials.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
     runs-on: ubuntu-latest
@@ -227,6 +227,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
+      - name: Build public frontend assets before private dependency access
+        shell: bash
+        run: bash scripts/build-public-frontends.sh
       - name: Prepare full Rust tools and isolated private cache before credential
         shell: bash
         run: |
@@ -260,21 +263,21 @@ jobs:
           export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
           cargo +1.95.0 fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
           cargo +1.95.0 fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
-      - name: Verify Rust lockfiles and compile without token, network or public logs
+      - name: Verify Rust lockfiles, full target matrix, and isolated release smoke
         shell: bash
         run: |
           set -euo pipefail
           for app in web api; do
-            for mode in lock fmt clippy test; do
+            for mode in lock fmt clippy test release; do
               bash .github/scripts/offline-rust-review.sh "$app" "$mode"
             done
           done
 
-  # The full stack must build on a DIFFERENT ephemeral runner: no private
-  # dependency fetch cache, credential helper or private token is accessible.
-  # This remains a required protected-main gate, not a warning or soft skip.
+  # Frontend verification runs on a separate fresh runner without private
+  # Cargo source, cache, helper or token. The Rust release binaries and stack
+  # runtime smoke run only inside the networkless private-cache sandbox.
+  # This independent frontend job remains a required protected-main gate.
   isolated-stack-build:
-    needs: integration-build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
@@ -303,18 +306,11 @@ jobs:
             apps/canonical-marketing-site.web \
             apps/canonical-interfaces \
             apps/canonical-mcp-server.rs
-      - name: Run full stack checks on independent runner without private source
-        env:
-          CARGO_NET_OFFLINE: "true"
-          GIT_TERMINAL_PROMPT: "0"
-          npm_config_offline: "true"
+      - name: Verify public frontends without private Rust dependency sources
         shell: bash
-        run: |
-          set -euo pipefail
-          export CARGO_HOME="$RUNNER_TEMP/canonical-public-stack-cargo-home"
-          mkdir -p "$CARGO_HOME"
-          ./build.sh
-          bash scripts/stack-smoke.sh
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: bash scripts/build-public-frontends.sh
 
   private-sidecar-contract:
     # A private checkout is allowed only for a trusted push to protected main.
