@@ -6,7 +6,7 @@ const workflow = await readFile(new URL("../.github/workflows/trusted-cargo-revi
 const preflight = workflow.slice(workflow.indexOf("  preflight:"), workflow.indexOf("  trusted-cargo:"));
 const trusted = workflow.slice(workflow.indexOf("  trusted-cargo:"));
 const beginning = trusted.indexOf("      - name: Fetch pinned private dependencies only");
-const ending = trusted.indexOf("      - name: Verify regenerated Cargo.lock parity", beginning);
+const ending = trusted.indexOf("      - name: Verify both lockfiles in network-disabled", beginning);
 assert.ok(beginning >= 0 && ending > beginning);
 const fetchStep = trusted.slice(beginning, ending);
 const afterFetch = trusted.slice(ending);
@@ -60,13 +60,13 @@ test("Cargo token only lives inside fetch step, with no builds or publishing", (
   assert.doesNotMatch(fetchStep, /\bcargo .*?\b(?:test|run|build|check)\b|\bnpm\b/);
   assert.doesNotMatch(workflow, /docker\/(?:login-action|build-push-action)|packages:\s*write/);
 });
-test("after fetch, lock regeneration and Rust tests are offline and token-free", () => {
+test("after fetch, lock and build commands run only through networkless container entrypoint", () => {
   assert.doesNotMatch(afterFetch, /PRIVATE_CARGO_TOKEN|GIT_ASKPASS|secrets\./);
-  assert.match(afterFetch, /CARGO_NET_OFFLINE: "true"/);
-  assert.match(afterFetch, /cargo \+1\.95\.0 generate-lockfile --offline/);
-  assert.match(afterFetch, /cmp "\$app\/Cargo\.lock"/);
-  assert.match(afterFetch, /cargo \+1\.95\.0 clippy/);
-  assert.match(afterFetch, /cargo \+1\.95\.0 test/);
+  assert.match(afterFetch, /bash \.github\/scripts\/offline-rust-review\.sh web lock/);
+  assert.match(afterFetch, /bash \.github\/scripts\/offline-rust-review\.sh api lock/);
+  assert.match(afterFetch, /for app in web api; do[\s\S]*?for mode in fmt clippy test; do/);
+  assert.match(afterFetch, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
+  assert.doesNotMatch(afterFetch, /cargo \+1\.95\.0 (?:clippy|test|generate-lockfile)/);
 });
 test("RustSec auditing is strict and any rkyv exception requires a graph proof", () => {
   assert.match(afterFetch, /cargo \+1\.95\.0 install cargo-audit --locked --version 0\.22\.2/);
@@ -106,4 +106,22 @@ test("preflight tree is confirmed against immutable checked-out Git tree", () =>
   assert.match(preflight, /echo "web_tree=\$tree" >> "\$GITHUB_OUTPUT"/);
   assert.match(trusted, /EXPECTED_TREE: \$\{\{ needs\.preflight\.outputs\.web_tree \}\}/);
   assert.match(trusted, /test "\$\(git -C apps\/canonical-web-server\.rs rev-parse 'HEAD\^\{tree\}'\)" = "\$EXPECTED_TREE"/);
+});
+
+test("Docker image is resolved to an immutable local ID before any credentials", () => {
+  const imageSetup = trusted.indexOf("      - name: Prepare disposable Rust image");
+  const review = trusted.indexOf("      - name: Revalidate candidate reviews");
+  assert.ok(imageSetup > 0 && imageSetup < review && review < beginning);
+  const prep = trusted.slice(imageSetup, review);
+  assert.match(prep, /docker pull "\$image"/);
+  assert.match(prep, /docker image inspect --format '\{\{\.Id\}\}'/);
+  assert.match(prep, /\^sha256:\[a-f0-9\]\{64\}\$/);
+  assert.match(prep, /CANONICAL_PRIVATE_CARGO_CACHE/);
+  assert.doesNotMatch(prep, /secrets\.|PRIVATE_CARGO_TOKEN/);
+});
+test("Cargo fetch is the only consumer of the ephemeral private dependency cache with token", () => {
+  assert.match(fetchStep, /export CARGO_HOME="\$CANONICAL_PRIVATE_CARGO_CACHE"/);
+  assert.match(fetchStep, /cargo \+1\.95\.0 fetch --locked/);
+  assert.doesNotMatch(fetchStep, /cargo \+1\.95\.0 (?:build|check|test|clippy)/);
+  assert.doesNotMatch(fetchStep, /docker run|npm/);
 });
