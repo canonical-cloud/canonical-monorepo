@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir, lstat } from "node:fs/promises";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const approved = Object.freeze({
@@ -25,30 +26,32 @@ const allowedSource = (url, rev) => "git+" + url + "?rev=" + rev + "#" + rev;
 
 // This deliberately accepts a restricted, reviewable TOML subset. Unknown
 // syntax, new Git remotes and moving revisions must be explicitly reviewed.
-export function checkGitSources(kind, manifest, lockfile) {
+export function checkGitSources(kind, manifest, lockfile, additionalManifests = []) {
   assert.ok(Object.hasOwn(approved, kind), "unknown Cargo application");
   const pins = approved[kind];
-  const lines = manifest.split(/\r?\n/);
   const direct = new Set();
   let directCount = 0;
-  for (const original of lines) {
-    const line = original.trim();
-    if (line.startsWith("#") || !/\bgit\s*=/.test(line)) continue;
-    const assignment = line.match(/^[A-Za-z0-9_-]+\s*=\s*\{(.*)\}\s*(?:#.*)?$/);
-    assert.ok(assignment, "unreviewed Git manifest syntax: " + original);
-    const body = assignment[1];
-    const urls = [...body.matchAll(/(?:^|,)\s*git\s*=\s*"([^"]+)"/g)];
-    const revs = [...body.matchAll(/(?:^|,)\s*rev\s*=\s*"([^"]+)"/g)];
-    assert.equal(urls.length, 1, "Git dependencies require one explicit URL");
-    assert.equal(revs.length, 1, "Git dependencies require one immutable revision");
-    const url = urls[0][1], rev = revs[0][1];
-    assert.match(rev, sha40, "Git revision must be a 40-character commit SHA");
-    assert.ok(Object.hasOwn(pins, url), "unapproved Cargo Git repository: " + url);
-    assert.equal(rev, pins[url], "unexpected pinned Git commit for " + url);
-    assert.doesNotMatch(body, /(?:^|,)\s*(?:branch|tag)\s*=/, "moving Git refs forbidden");
-    direct.add(url);
-    directCount++;
+  function inspect(manifestBody, pathLabel, countDirect) {
+    for (const original of manifestBody.split(/\r?\n/)) {
+      const line = original.trim();
+      if (line.startsWith("#") || !/\bgit\s*=/.test(line)) continue;
+      const assignment = line.match(/^[A-Za-z0-9_-]+\s*=\s*\{(.*)\}\s*(?:#.*)?$/);
+      assert.ok(assignment, "unreviewed Git manifest syntax in " + pathLabel + ": " + original);
+      const body = assignment[1];
+      const urls = [...body.matchAll(/(?:^|,)\s*git\s*=\s*"([^"]+)"/g)];
+      const revs = [...body.matchAll(/(?:^|,)\s*rev\s*=\s*"([^"]+)"/g)];
+      assert.equal(urls.length, 1, "Git dependencies require one explicit URL");
+      assert.equal(revs.length, 1, "Git dependencies require one immutable revision");
+      const url = urls[0][1], rev = revs[0][1];
+      assert.match(rev, sha40, "Git revision must be a 40-character commit SHA");
+      assert.ok(Object.hasOwn(pins, url), "unapproved Cargo Git repository: " + url);
+      assert.equal(rev, pins[url], "unexpected pinned Git commit for " + url);
+      assert.doesNotMatch(body, /(?:^|,)\s*(?:branch|tag)\s*=/, "moving Git refs forbidden");
+      if (countDirect) { direct.add(url); directCount++; }
+    }
   }
+  inspect(manifest, "root Cargo.toml", true);
+  for (const [pathLabel, body] of additionalManifests) inspect(body, pathLabel, false);
   assert.equal(directCount, kind === "web" ? 3 : 8, "direct Git dependency count changed");
   // A transitive Canonical Interfaces dependency is present in the API lock.
   const requiredDirect = kind === "web" ? Object.keys(pins) :
@@ -80,8 +83,37 @@ export function checkGitSources(kind, manifest, lockfile) {
   return { application: kind, direct: directCount, sources: seen.size };
 }
 
+// Inspect every Cargo manifest in the candidate tree before any Git token is
+// exposed, not just the workspace root. A member crate must not be able to add
+// an attacker-controlled Git origin while leaving the root manifest untouched.
 export async function verifyFilePair(kind, manifestPath, lockPath) {
-  return checkGitSources(kind, await readFile(manifestPath, "utf8"), await readFile(lockPath, "utf8"));
+  const root = manifestPath.slice(0, -"/Cargo.toml".length);
+  const extra = [];
+  async function walk(dir, depth) {
+    assert.ok(depth <= 16, "Cargo manifest discovery exceeded depth bound");
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if ([".git", "node_modules", "target", "dist", ".next"].includes(entry.name)) continue;
+      const path = join(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        assert.fail("unreviewed symbolic link in Cargo source tree: " + path);
+      }
+      if (entry.isDirectory()) {
+        if (entry.name === ".cargo") {
+          for (const config of ["config", "config.toml"]) {
+            const configPath = join(path, config);
+            try { await lstat(configPath); assert.fail("unreviewed Cargo config override: " + configPath); }
+            catch (e) { if (e.code !== "ENOENT") throw e; }
+          }
+        }
+        await walk(path, depth + 1);
+      } else if (entry.isFile() && entry.name === "Cargo.toml" && path !== manifestPath) {
+        extra.push([path, await readFile(path, "utf8")]);
+      }
+    }
+  }
+  await walk(root, 0);
+  return checkGitSources(kind, await readFile(manifestPath, "utf8"),
+    await readFile(lockPath, "utf8"), extra);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
