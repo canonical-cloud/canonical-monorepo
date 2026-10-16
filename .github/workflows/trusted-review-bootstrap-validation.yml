@@ -1,0 +1,52 @@
+name: Trusted Rust bootstrap security regression
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/trusted-cargo-review.yml"
+      - ".github/workflows/trusted-review-bootstrap-validation.yml"
+      - ".github/scripts/**"
+      - "scripts/check-cargo-git-sources.mjs"
+      - "scripts/trusted-candidate-admission.mjs"
+      - "tests/trusted-cargo-review-workflow.test.mjs"
+      - "tests/trusted-candidate-admission.test.mjs"
+      - "tests/offline-rust-review.test.mjs"
+      - "tests/ci-private-cargo-askpass.test.mjs"
+      - "tests/cargo-git-source-admission.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap-static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify immutable candidate commit and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Exercise credential, reviewed-source and isolation adversaries
+        run: |
+          node --test \
+            tests/trusted-cargo-review-workflow.test.mjs \
+            tests/trusted-candidate-admission.test.mjs \
+            tests/offline-rust-review.test.mjs \
+            tests/ci-private-cargo-askpass.test.mjs \
+            tests/cargo-git-source-admission.test.mjs
