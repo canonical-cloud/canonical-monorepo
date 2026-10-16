@@ -12,9 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -48,6 +45,8 @@ jobs:
 
   integration-build:
     needs: test
+    # Only a reviewed push to protected main may expose private Cargo credentials.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -58,7 +57,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: false
+          ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Verify reviewed main commit and Git tree
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
       - name: Initialize public integration submodules
         run: |
           set -euo pipefail
@@ -78,11 +84,6 @@ jobs:
           workspaces: |
             apps/canonical-web-server.rs
             apps/canonical-api-server.rs
-      - name: Rust web modularization contracts
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          --workspace --all-targets
       - name: Rust API contracts
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
@@ -104,18 +105,28 @@ jobs:
           SH
           chmod 700 "$askpass"
 
-          GIT_ASKPASS="$askpass" \
-          GIT_TERMINAL_PROMPT=0 \
-          CARGO_NET_GIT_FETCH_WITH_CLI=true \
-            cargo test --locked \
-              --manifest-path apps/canonical-api-server.rs/Cargo.toml \
-              --all-targets --all-features
-      - name: Build the pinned public stack
-        run: ./build.sh
+          # Remove the temporary executable on success, error or cancellation.
+          trap 'rm -f -- "$askpass"' EXIT
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          cargo test --locked \
+            --manifest-path apps/canonical-web-server.rs/Cargo.toml \
+            --workspace --all-targets
+          cargo test --locked \
+            --manifest-path apps/canonical-api-server.rs/Cargo.toml \
+            --all-targets --all-features
+          # Builds the same reviewed submodule pins while credentials remain
+          # restricted to this single trusted step.
+          ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)
         run: bash scripts/stack-smoke.sh
 
   private-sidecar-contract:
+    # No private repository checkout on pull_request or workflow_dispatch.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
+    env:
+      PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -124,14 +135,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: false
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Explain credential boundary when private read access is unavailable
+      - name: Verify reviewed main commit and Git tree
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Require private sidecar read access before release
         if: env.PRIVATE_SUBMODULE_TOKEN == ''
-        run: >-
-          echo 'Private sidecar source was not fetched. Configure the repository secret
-          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN with read-only access to
-          canonical-cloud/canonical-sidecar.rs to enable private pin verification.'
+        run: |
+          echo '::error::Required private sidecar pin could not be verified: configure the repository-scoped read-only credential.'
+          exit 1
       - name: Check out private sidecar with repository-scoped read secret
         if: env.PRIVATE_SUBMODULE_TOKEN != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
