@@ -154,10 +154,16 @@ test("full-stack build includes browser clients and both Rust services", () => {
   assert.doesNotMatch(build, /\brm\b|\bcp\b/);
 
   const ci = read(".github/workflows/ci.yml");
-  assert.match(ci, /cargo test --locked/);
-  assert.match(ci, /--workspace --all-targets/);
+  const offline = read(".github/scripts/offline-rust-review.sh");
+  assert.match(ci, /isolated-stack-build:/);
+  assert.match(ci, /needs: integration-build/);
+  assert.match(ci, /for app in web api; do/);
+  assert.match(ci, /for mode in lock fmt clippy test; do/);
+  assert.match(ci, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
   assert.match(ci, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
-  assert.match(ci, /--all-targets --all-features/);
+  assert.match(offline, /cargo test --manifest-path \/src\/Cargo\.toml --workspace --all-targets --locked/);
+  assert.match(offline, /cargo test --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
+  assert.match(offline, /cargo clippy --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
 });
 
 test("pinned API preserves quote, auth, declarative Postgres, and package boundaries", () => {
