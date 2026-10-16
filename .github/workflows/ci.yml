@@ -37,8 +37,40 @@ jobs:
         with:
           node-version: "22"
       - name: Validate credential isolation without private source or secrets
-        run: node --test tests/ci-private-cargo-askpass.test.mjs tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
+        run: node --test tests/ci-private-cargo-askpass.test.mjs tests/offline-rust-review.test.mjs tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
 
+  offline-container-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Fetch approved Rust image before any private source is loaded
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull rust:1.95.0-bookworm >"$RUNNER_TEMP/rust-smoke-image.log" 2>&1
+          image_id="$(docker image inspect --format '{{.Id}}' rust:1.95.0-bookworm)"
+          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "RUST_SMOKE_IMAGE=$image_id" >> "$GITHUB_ENV"
+      - name: Prove image cannot reach a network, write rootfs or gain capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --pull=never --network none --ipc none \
+            --read-only --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" --pids-limit 256 \
+            --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --entrypoint /bin/bash "$RUST_SMOKE_IMAGE" -euo pipefail -c '
+              rustc --version
+              test "$(wc -l </proc/net/route)" -eq 1
+              test ! -e /var/run/docker.sock
+              test ! -w /
+              test "$(awk "/^CapEff:/ {print \$2}" /proc/self/status)" = "0000000000000000"
+              printf "fn main() {}\n" >/tmp/sandbox.rs
+              rustc /tmp/sandbox.rs -o /tmp/sandbox
+              /tmp/sandbox
+            '
   git-source-admission:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
