@@ -8,15 +8,24 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
 - Untrusted PR workflows run without secrets.
 - The manually dispatched `.github/workflows/trusted-cargo-review.yml`
   definition must be installed on protected `canonical-monorepo/main`.
-- A preflight verifies an open same-repository
+- A preflight verifies an open, **non-draft**, same-repository
   `canonical-cloud/canonical-web-server.rs` PR targeting `main` and an
-  explicitly supplied exact 40-character head SHA. It also verifies the
-  `canonical-private-cargo-validation` environment has an independent reviewer
-  rule, prevents self-review, and limits deployments to protected branches.
-- That preflight calls the GitHub Environments REST API. If GitHub denies the
-  workflow identity permission to read environment metadata, it **fails closed
-  before any private credential is loaded**. An administrator must arrange
-  supported read-only metadata access; do not weaken the check to make it pass.
+  explicitly supplied exact 40-character head SHA. The PR requires the
+  `trusted-private-ci` opt-in label and a trusted independent approval of
+  the **current exact commit**, with no outstanding trusted changes requests.
+  All pages of GitHub reviews are examined, not only the first 100.
+  The preflight verifies that the `canonical-private-cargo-validation`
+  environment requires independent reviewers, prevents self-review, and limits
+  deployments to protected branches.
+- The preflight calls the GitHub Environments REST API using a `GITHUB_TOKEN`
+  with **Actions: read** and **Contents: read**, as required for environment
+  inspection. If GitHub denies metadata access, it **fails closed before any
+  private credential is loaded**; an administrator must arrange supported
+  read-only access instead of weakening the check.
+- After human environment approval, the trusted job checks the PR's current
+  head, opt-in label, all paginated review states and exact source tree **again
+  before** the private dependency token is attached to its fetch step. A
+  changed/dismissed approval or changed PR head requires fresh review.
 - The approved environment must require independent human approval. Never
   allow `pull_request` or `pull_request_target` to invoke the credentialed job.
 - `CANONICAL_PRIVATE_CARGO_READ_TOKEN` must grant only read access to the
@@ -45,9 +54,10 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
    `main` using an approved change. GitHub generally requires a workflow to
    exist on the default branch before it can be dispatched. Do not bypass
    required checks on PR #130 to do this.
-5. Dispatch **Trusted reviewed web Cargo validation** with `ref=main`,
-   `web_pr=195`, and the current exact head SHA of that open PR. Approval is
-   explicit for the SHA; changed heads require a new dispatch.
+5. Only after web PR #195 is non-draft, independently approved at its current
+   exact commit and labeled `trusted-private-ci`, dispatch **Trusted reviewed
+   web Cargo validation** with `ref=main`, `web_pr=195`, and the exact head
+   SHA. Approval is explicit for that SHA; changed heads require a new dispatch.
 6. Require the logged monorepo commit/tree and web candidate commit/tree to
    match the reviewed revisions. The API is read from its pinned public
    monorepo gitlink.
