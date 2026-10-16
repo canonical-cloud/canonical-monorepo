@@ -1,0 +1,269 @@
+name: Trusted reviewed web Cargo validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      web_pr:
+        description: "Open canonical-cloud/canonical-web-server.rs pull request number"
+        type: string
+        required: true
+      web_sha:
+        description: "Exact 40-character web PR head commit"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trusted-cargo-review-${{ inputs.web_sha }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    # The workflow definition must come from this repo's protected main, never
+    # from a PR branch. A reviewer-approved environment is also required.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      web_sha: ${{ steps.verify.outputs.web_sha }}
+      web_pr: ${{ steps.verify.outputs.web_pr }}
+      web_tree: ${{ steps.verify.outputs.web_tree }}
+    steps:
+      - name: Verify immutable candidate and approved environment configuration
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ inputs.web_pr }}
+          WEB_SHA: ${{ inputs.web_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WEB_PR" =~ ^[1-9][0-9]*$ ]]
+          [[ "$WEB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          pr_json="$(curl --fail --silent --show-error --location \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/canonical-cloud/canonical-web-server.rs/pulls/$WEB_PR")"
+          printf '%s' "$pr_json" | jq -e --arg expected "$WEB_SHA" \
+            '.state == "open" and .head.sha == $expected and .base.ref == "main"
+             and .base.repo.full_name == "canonical-cloud/canonical-web-server.rs"
+             and .head.repo.full_name == "canonical-cloud/canonical-web-server.rs"' >/dev/null
+
+          # Fail closed if the application cannot confirm required independent
+          # reviewers. The env MUST have a required-reviewers rule with
+          # prevent_self_review and a protected-branches deployment policy.
+          # An administrator may need to grant the workflow's identity
+          # read-only permission to inspect environment metadata.
+          env_json="$(curl --fail --silent --show-error --location \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/canonical-cloud/canonical-monorepo/environments/canonical-private-cargo-validation")"
+          printf '%s' "$env_json" | jq -e \
+            '(.deployment_branch_policy.protected_branches == true)
+             and any(.protection_rules[]?;
+               .type == "required_reviewers"
+               and (.reviewers | length) > 0
+               and .prevent_self_review == true)' >/dev/null
+          echo "web_sha=$WEB_SHA" >> "$GITHUB_OUTPUT"
+          echo "web_pr=$WEB_PR" >> "$GITHUB_OUTPUT"
+          echo "Authorized candidate identity: web PR #$WEB_PR at $WEB_SHA"
+
+      - name: Checkout exact trusted admission validator from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install Node for immutable candidate review checks
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Require independent review, opt-in label and exact source tree
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ inputs.web_pr }}
+          WEB_SHA: ${{ inputs.web_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          repo='canonical-cloud/canonical-web-server.rs'
+          gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/candidate-pr.json"
+          # Page 1 alone can miss a subsequent dismissal or changes-requested review.
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/candidate-reviews.json"
+          gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/candidate-commit.json"
+          tree="$(jq -r '.tree.sha' "$RUNNER_TEMP/candidate-commit.json")"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node scripts/trusted-candidate-admission.mjs \
+            "$RUNNER_TEMP/candidate-pr.json" \
+            "$RUNNER_TEMP/candidate-reviews.json" \
+            "$RUNNER_TEMP/candidate-commit.json" \
+            "$WEB_PR" "$WEB_SHA" "$tree"
+          # This value must be rechecked against the source checkout after
+          # human environment approval and before any private read token.
+          echo "web_tree=$tree" >> "$GITHUB_OUTPUT"
+
+  trusted-cargo:
+    needs: preflight
+    if: needs.preflight.result == 'success'
+    environment: canonical-private-cargo-validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted monorepo workflow code from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+          persist-credentials: false
+      - name: Verify trusted workflow tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Initialize only public API gitlink
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive -- apps/canonical-api-server.rs
+          test "$(git -C apps/canonical-api-server.rs rev-parse HEAD)" = \
+            "$(git rev-parse 'HEAD:apps/canonical-api-server.rs')"
+      - name: Check out exact approved web PR commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: canonical-cloud/canonical-web-server.rs
+          ref: ${{ needs.preflight.outputs.web_sha }}
+          path: apps/canonical-web-server.rs
+          persist-credentials: false
+          submodules: false
+      - name: Verify reviewed web SHA and source tree
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.preflight.outputs.web_sha }}
+          EXPECTED_TREE: ${{ needs.preflight.outputs.web_tree }}
+        run: |
+          set -euo pipefail
+          test "$(git -C apps/canonical-web-server.rs rev-parse HEAD)" = "$EXPECTED_SHA"
+          git -C apps/canonical-web-server.rs rev-parse HEAD
+          git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}'
+          test "$(git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
+      - name: Install Node and pinned Rust toolchain
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Install Rust 1.95
+        shell: bash
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Revalidate candidate reviews after environment approval, before private fetch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ needs.preflight.outputs.web_pr }}
+          WEB_SHA: ${{ needs.preflight.outputs.web_sha }}
+          WEB_TREE: ${{ needs.preflight.outputs.web_tree }}
+        run: |
+          set -euo pipefail
+          repo='canonical-cloud/canonical-web-server.rs'
+          gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/approved-candidate-pr.json"
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/approved-candidate-reviews.json"
+          gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/approved-candidate-commit.json"
+          node scripts/trusted-candidate-admission.mjs \
+            "$RUNNER_TEMP/approved-candidate-pr.json" \
+            "$RUNNER_TEMP/approved-candidate-reviews.json" \
+            "$RUNNER_TEMP/approved-candidate-commit.json" \
+            "$WEB_PR" "$WEB_SHA" "$WEB_TREE"
+      - name: Pre-credential immutable Git source admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-cargo-git-sources.mjs
+          for app in . apps/canonical-web-server.rs apps/canonical-api-server.rs; do
+            test ! -e "$app/.cargo/config.toml"
+            test ! -e "$app/.cargo/config"
+          done
+      - name: Fetch pinned private dependencies only (no build scripts)
+        env:
+          PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$PRIVATE_CARGO_TOKEN" ]]; then
+            echo '::error::Approved read-only private Cargo token is required.'
+            exit 1
+          fi
+          askpass="$RUNNER_TEMP/private-cargo-review-askpass.sh"
+          cat > "$askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *github.com*) ;;
+            *) exit 1 ;;
+          esac
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          SH
+          chmod 700 "$askpass"
+          trap 'rm -f -- "$askpass"' EXIT
+          export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          cargo +1.95.0 fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          cargo +1.95.0 fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
+      - name: Verify regenerated Cargo.lock parity without credentials
+        env:
+          CARGO_NET_OFFLINE: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in apps/canonical-web-server.rs apps/canonical-api-server.rs; do
+            cp "$app/Cargo.lock" "$RUNNER_TEMP/$(basename "$app").original.lock"
+            cargo +1.95.0 generate-lockfile --offline --manifest-path "$app/Cargo.toml"
+            cmp "$app/Cargo.lock" "$RUNNER_TEMP/$(basename "$app").original.lock"
+            echo "Verified generated Cargo.lock parity: $app"
+          done
+      - name: Install pinned cargo-audit without private credentials
+        shell: bash
+        run: cargo +1.95.0 install cargo-audit --locked --version 0.22.2
+      - name: Validate rkyv reachability and audit both Rust lockfiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd apps/canonical-web-server.rs
+            bash scripts/check-rkyv-active-graph.sh
+            cargo audit --deny unmaintained --deny unsound --deny yanked \
+              --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235
+          )
+          (
+            cd apps/canonical-api-server.rs
+            cargo audit --deny unmaintained --deny unsound --deny yanked
+          )
+      - name: Format, Clippy and Rust tests (no credentials)
+        env:
+          CARGO_NET_OFFLINE: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.95.0 fmt --all --check --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          cargo +1.95.0 clippy --manifest-path apps/canonical-web-server.rs/Cargo.toml --workspace --all-targets --locked -- -D warnings
+          cargo +1.95.0 test --manifest-path apps/canonical-web-server.rs/Cargo.toml --workspace --all-targets --locked
+          cargo +1.95.0 clippy --manifest-path apps/canonical-api-server.rs/Cargo.toml --all-targets --locked -- -D warnings
+          cargo +1.95.0 test --manifest-path apps/canonical-api-server.rs/Cargo.toml --all-targets --all-features --locked
+      - name: Record validation limitation
+        shell: bash
+        run: |
+          echo "Trusted candidate Rust/lock validation finished for ${{ needs.preflight.outputs.web_sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "No release or monorepo gitlink mutation was performed." >> "$GITHUB_STEP_SUMMARY"

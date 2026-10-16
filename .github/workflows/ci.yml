@@ -37,7 +37,46 @@ jobs:
         with:
           node-version: "22"
       - name: Validate credential isolation without private source or secrets
-        run: node --test tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs
+        run: node --test tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
+
+  git-source-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact candidate without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          submodules: false
+          persist-credentials: false
+      - name: Require exact reviewed candidate and log tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+      - name: Fetch only public pinned Rust source gitlinks
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive -- apps/canonical-web-server.rs apps/canonical-api-server.rs
+          for app in apps/canonical-web-server.rs apps/canonical-api-server.rs; do
+            test "$(git -C "$app" rev-parse HEAD)" = "$(git rev-parse "HEAD:$app")"
+          done
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Test fixed Git source admission policy
+        run: node --test tests/cargo-git-source-admission.test.mjs
+      - name: Verify both actual Cargo manifests and lockfiles without private credentials
+        run: node scripts/check-cargo-git-sources.mjs
 
   test:
     runs-on: ubuntu-latest
@@ -110,6 +149,8 @@ jobs:
           workspaces: |
             apps/canonical-web-server.rs
             apps/canonical-api-server.rs
+      - name: Reject unexpected Git origins before private Cargo credential is exposed
+        run: node scripts/check-cargo-git-sources.mjs
       - name: Fetch immutable private Rust dependencies without executing build code
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
