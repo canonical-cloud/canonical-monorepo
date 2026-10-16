@@ -57,10 +57,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          out="$(mktemp -d "$RUNNER_TEMP/offline-rust-smoke.XXXXXXXX")"
+          trap 'rm -rf -- "$out"' EXIT
           docker run --rm --pull=never --network none --ipc none \
             --read-only --cap-drop ALL --security-opt no-new-privileges \
             --user "$(id -u):$(id -g)" --pids-limit 256 \
             --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+            --mount "type=bind,source=$out,target=/out" \
             --entrypoint /bin/bash "$RUST_SMOKE_IMAGE" -euo pipefail -c '
               rustc --version
               test "$(wc -l </proc/net/route)" -eq 1
@@ -68,8 +71,8 @@ jobs:
               test ! -w /
               test "$(awk "/^CapEff:/ {print \$2}" /proc/self/status)" = "0000000000000000"
               printf "fn main() {}\n" >/tmp/sandbox.rs
-              rustc /tmp/sandbox.rs -o /tmp/sandbox
-              /tmp/sandbox
+              rustc /tmp/sandbox.rs -o /out/sandbox
+              /out/sandbox
             '
   git-source-admission:
     runs-on: ubuntu-24.04
