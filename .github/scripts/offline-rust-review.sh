@@ -49,7 +49,7 @@ if docker run --rm --pull=never \
   --mount "type=bind,source=$source_dir,target=/src,readonly" \
   --mount "type=bind,source=$cache,target=/cargo-cache,readonly" \
   --mount "type=bind,source=$out,target=/out" \
-  -e CARGO_HOME=/cargo-cache \
+  -e CARGO_HOME=/scratch/cargo \
   -e CARGO_NET_OFFLINE=true \
   -e CARGO_INCREMENTAL=0 \
   -e CARGO_TERM_COLOR=never \
@@ -59,6 +59,15 @@ if docker run --rm --pull=never \
   -e REVIEW_MODE="$mode" \
   --workdir /src \
   --entrypoint /bin/bash "$image" -euo pipefail -c '
+    # Cargo creates package lock/metadata files in CARGO_HOME, which must
+    # never write into the source cache. Keep HOME writable but symlink only
+    # immutable downloaded dependency subtrees from the read-only cache.
+    mkdir -p /scratch/cargo
+    for cached in git registry; do
+      if test -d "/cargo-cache/$cached"; then
+        ln -s "/cargo-cache/$cached" "/scratch/cargo/$cached"
+      fi
+    done
     case "$REVIEW_MODE" in
       lock)
         mkdir -p /scratch/src
