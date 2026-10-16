@@ -32,20 +32,57 @@ test("exact Git HTTPS username prompt returns only username", () => {
 });
 
 test("exact Git HTTPS password prompt returns only scoped token", () => {
-  const r = ask("Password for 'https://github.com':");
+  const r = ask("Password for 'https://x-access-token@github.com':");
   assert.equal(r.status, 0);
   assert.equal(r.stdout, fakeToken + "\n");
   assert.equal(r.stderr, "");
 });
 
 test("missing token fails closed without emitting a password", () => {
-  const r = ask("Password for 'https://github.com':", "");
+  const r = ask("Password for 'https://x-access-token@github.com':", "");
   assert.notEqual(r.status, 0);
   assert.equal(r.stdout, "");
   assert.equal(r.stderr, "");
 });
 
+test("Git's real credential fill handshake supplies the fake token only for github.com", () => {
+  const r = spawnSync("git", ["-c", "credential.helper=", "credential", "fill"], {
+    input: "protocol=https\nhost=github.com\n\n",
+    encoding: "utf8",
+    timeout: 3000,
+    env: {
+      PATH: process.env.PATH,
+      PRIVATE_CARGO_TOKEN: fakeToken,
+      GIT_ASKPASS: helper,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+    },
+  });
+  assert.equal(r.status, 0, "valid Git credential fill must succeed");
+  assert.match(r.stdout, /^protocol=https\nhost=github.com\nusername=x-access-token\npassword=/);
+  assert.ok(r.stdout.includes("password=" + fakeToken + "\n"));
+});
+test("Git credential fill never supplies a password to a lookalike hostname", () => {
+  const r = spawnSync("git", ["-c", "credential.helper=", "credential", "fill"], {
+    input: "protocol=https\nhost=github.com.attacker.invalid\n\n",
+    encoding: "utf8",
+    timeout: 3000,
+    env: {
+      PATH: process.env.PATH,
+      PRIVATE_CARGO_TOKEN: fakeToken,
+      GIT_ASKPASS: helper,
+      GIT_TERMINAL_PROMPT: "0",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: "/dev/null",
+    },
+  });
+  assert.notEqual(r.status, 0);
+  assert.ok(!r.stdout.includes(fakeToken));
+  assert.ok(!r.stderr.includes(fakeToken));
+});
 const forbidden = [
+  "Password for 'https://github.com':",
   "Password for 'https://evilgithub.com':",
   "Password for 'https://github.com.attacker.invalid':",
   "Password for 'https://api.github.com':",
@@ -59,7 +96,7 @@ const forbidden = [
   "Password for 'HTTPS://github.com':",
   "Password for 'https://GITHUB.com':",
   "Credential for 'https://github.com':",
-  "Password for 'https://github.com': trailing injection",
+  "Password for 'https://x-access-token@github.com': trailing injection",
   "",
 ];
 for (const prompt of forbidden) {
