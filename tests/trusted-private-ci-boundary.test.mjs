@@ -58,7 +58,7 @@ test("public frontends are mandatory on independent runner and cannot compile pr
   assert.ok(separateStack.includes(mainOnly));
   assert.match(privateCargo, /needs: \[test, isolated-stack-build\]/);
   assert.doesNotMatch(separateStack, /needs: integration-build/);
-  assert.match(separateStack, /run: bash scripts\/build-public-frontends\.sh/);
+  assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
   assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE|actions\/upload-artifact/);
 });
 test("release binaries never leave the sandbox for GitHub Actions artifacts", () => {
