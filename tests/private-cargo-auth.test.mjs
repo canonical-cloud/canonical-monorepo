@@ -44,7 +44,7 @@ test("private Rust compilation is delegated only to networkless container runner
   assert.doesNotMatch(testSteps, /\bcargo (?:test|build|check|clippy|run)\b/);
 });
 test("public frontend verification is a separate required job with no private Rust cache", () => {
-  assert.match(source, /integration-build:\s*\n\s+needs: \[test, isolated-stack-build\]/);
+  assert.match(source, /integration-build:\s*\n\s+needs: \[test, isolated-stack-build, public-artifact-contract\]/);
   assert.match(stackJob, /github\.repository == 'canonical-cloud\/canonical-monorepo'/);
   assert.match(stackJob, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
   assert.doesNotMatch(stackJob, /needs: integration-build/);
