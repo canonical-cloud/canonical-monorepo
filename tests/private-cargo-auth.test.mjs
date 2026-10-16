@@ -47,7 +47,7 @@ test("public frontend verification is a separate required job with no private Ru
   assert.match(source, /integration-build:\s*\n\s+needs: \[test, isolated-stack-build\]/);
   assert.match(stackJob, /github\.ref == 'refs\/heads\/main'/);
   assert.doesNotMatch(stackJob, /needs: integration-build/);
-  assert.match(stackJob, /run: bash scripts\/build-public-frontends\.sh/);
+  assert.match(stackJob, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
   assert.doesNotMatch(stackJob, /cargo (?:fetch|build|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
 });
 test("private compilation includes release and smoke only inside the sandbox", () => {
