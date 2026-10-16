@@ -34,18 +34,23 @@ test("private sidecar job runs only on main push in source repository", () => {
   assert.ok(privateSidecar.includes(mainOnly));
   assert.match(privateSidecar, /ref: \$\{\{ github\.sha \}\}/);
 });
-test("private Cargo token only exists in one trusted step", () => {
+test("private Cargo token only exists in a fetch-only step", () => {
   assert.equal((workflow.match(/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/g) || []).length, 1);
-  const at = privateCargo.indexOf("      - name: Rust API contracts");
-  assert.ok(at >= 0);
-  const step = privateCargo.slice(at, privateCargo.indexOf("      - name: Stack smoke", at));
-  assert.match(step, /PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}/);
-  assert.match(step, /GIT_ASKPASS/);
-  assert.match(step, /trap 'rm -f -- "\$askpass"' EXIT/);
-  assert.match(step, /CARGO_NET_GIT_FETCH_WITH_CLI=true/);
-  assert.match(step, /apps\/canonical-web-server\.rs\/Cargo\.toml/);
-  assert.match(step, /apps\/canonical-api-server\.rs\/Cargo\.toml/);
-  assert.match(step, /\.\/build\.sh/);
+  const at = privateCargo.indexOf("      - name: Fetch immutable private Rust dependencies");
+  const testsAt = privateCargo.indexOf("      - name: Rust web modularization contracts", at);
+  const buildAt = privateCargo.indexOf("      - name: Build the pinned public stack", testsAt);
+  assert.ok(at >= 0 && testsAt > at && buildAt > testsAt);
+  const fetch = privateCargo.slice(at, testsAt);
+  const execution = privateCargo.slice(testsAt);
+  assert.match(fetch, /PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}/);
+  assert.match(fetch, /GIT_ASKPASS/);
+  assert.match(fetch, /trap 'rm -f -- "\$askpass"' EXIT/);
+  assert.match(fetch, /CARGO_NET_GIT_FETCH_WITH_CLI=true/);
+  assert.match(fetch, /cargo fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);
+  assert.match(fetch, /cargo fetch --locked --manifest-path apps\/canonical-api-server\.rs\/Cargo\.toml/);
+  assert.match(execution, /CARGO_NET_OFFLINE: "true"/);
+  assert.match(execution, /\.\/build\.sh/);
+  assert.doesNotMatch(execution, /PRIVATE_CARGO_TOKEN|GIT_ASKPASS|secrets\./);
   assert.doesNotMatch(workflow, /https:\/\/[^\s/"']+:[^\s@"']+@github\.com\//);
 });
 test("a missing private sidecar credential fails closed on trusted main", () => {
