@@ -25,8 +25,7 @@ test("missing private Cargo admission fails before any private build", () => {
   assert.match(fetchStep, /exit 1/);
 });
 test("fetch step restricts GitHub host and removes temporary askpass script", () => {
-  assert.match(fetchStep, /case "\$1" in[\s\S]*\*github\.com\*\) ;;/);
-  assert.match(fetchStep, /chmod 700 "\$askpass"/);
+  assert.match(fetchStep, /install -m 0700 .github\/scripts\/private-cargo-askpass\.sh "\$askpass"/);
   assert.match(fetchStep, /trap 'rm -f -- "\$askpass"' EXIT/);
   assert.match(fetchStep, /export GIT_ASKPASS/);
   assert.match(fetchStep, /export GIT_TERMINAL_PROMPT=0/);

@@ -52,6 +52,7 @@ test("no credential is used before fixed allowlist and cargo config checks", () 
 test("Cargo token only lives inside fetch step, with no builds or publishing", () => {
   assert.equal((workflow.match(/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/g) || []).length, 1);
   assert.match(fetchStep, /PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}/);
+  assert.match(fetchStep, /install -m 0700 .github\/scripts\/private-cargo-askpass\.sh "\$askpass"/);
   assert.match(fetchStep, /export GIT_ASKPASS="\$askpass"/);
   assert.match(fetchStep, /trap 'rm -f -- "\$askpass"' EXIT/);
   assert.match(fetchStep, /cargo \+1\.95\.0 fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);

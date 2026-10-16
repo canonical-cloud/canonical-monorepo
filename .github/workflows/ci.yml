@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: "22"
       - name: Validate credential isolation without private source or secrets
-        run: node --test tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
+        run: node --test tests/ci-private-cargo-askpass.test.mjs tests/private-cargo-auth.test.mjs tests/trusted-private-ci-boundary.test.mjs tests/trusted-cargo-review-workflow.test.mjs tests/trusted-candidate-admission.test.mjs
 
   git-source-admission:
     runs-on: ubuntu-24.04
@@ -162,19 +162,7 @@ jobs:
             exit 1
           fi
           askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
-          cat >"$askpass" <<'SH'
-          #!/bin/sh
-          case "$1" in
-            *github.com*) ;;
-            *) exit 1 ;;
-          esac
-          case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          SH
-          chmod 700 "$askpass"
+          install -m 0700 .github/scripts/private-cargo-askpass.sh "$askpass"
           trap 'rm -f -- "$askpass"' EXIT
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
