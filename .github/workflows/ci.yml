@@ -278,7 +278,9 @@ jobs:
   # runtime smoke run only inside the networkless private-cache sandbox.
   # This independent frontend job remains a required protected-main gate.
   isolated-stack-build:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
+    # Public frontend only: safe to validate the exact PR source without
+    # private dependency credentials or caches.
+    if: github.repository == 'canonical-cloud/canonical-monorepo'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     permissions:
@@ -287,13 +289,15 @@ jobs:
       - name: Checkout reviewed main without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           submodules: false
           persist-credentials: false
       - name: Verify exact Git tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           git rev-parse 'HEAD^{tree}'
       - name: Initialize only reviewed public application gitlinks
         run: |
