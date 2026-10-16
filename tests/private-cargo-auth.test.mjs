@@ -31,8 +31,8 @@ test("fetch step restricts GitHub host and removes temporary askpass script", ()
   assert.match(fetchStep, /export CARGO_NET_GIT_FETCH_WITH_CLI=true/);
 });
 test("both pinned Rust dependency graphs are fetched without executing code", () => {
-  assert.match(fetchStep, /cargo \\+1\\.95\\.0 fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);
-  assert.match(fetchStep, /cargo \\+1\\.95\\.0 fetch --locked --manifest-path apps\/canonical-api-server\.rs\/Cargo\.toml/);
+  assert.match(fetchStep, /cargo \+1\.95\.0 fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);
+  assert.match(fetchStep, /cargo \+1\.95\.0 fetch --locked --manifest-path apps\/canonical-api-server\.rs\/Cargo\.toml/);
   assert.doesNotMatch(fetchStep, /\bcargo (?:test|build|run|check)\b|npm (?:ci|install|run|test)/);
 });
 test("private Rust compilation is delegated only to networkless container runner", () => {
