@@ -106,6 +106,19 @@ test("rkyv inspection runs only in network-disabled web sandbox, never host", as
   assert.match(source, /--network none/);
   assert.match(source, /target=\/cargo-cache,readonly/);
 });
+test("real release targets and runtime smoke never escape the sandbox", async () => {
+  const source = await readFile(launcher, "utf8");
+  assert.match(source, /lock\|fmt\|clippy\|test\|release/);
+  assert.match(source, /cargo build --manifest-path \/src\/Cargo\.toml --locked --release --workspace --bins/);
+  assert.match(source, /cargo build --manifest-path \/src\/Cargo\.toml --locked --release --bin canonical-api-server/);
+  assert.match(source, /test -x \/out\/target\/release\/canonical-session-revoker/);
+  assert.match(source, /test -x \/out\/target\/release\/canonical-web-server/);
+  assert.match(source, /test -x \/out\/target\/release\/canonical-api-server/);
+  assert.match(source, /bash \/scratch\/site\/scripts\/stack-smoke\.sh/);
+  assert.match(source, /target=\/review-repo,readonly/);
+  assert.match(source, /--network none/);
+  assert.doesNotMatch(source, /actions\/upload-artifact|docker\s+push|gh release upload/);
+});
 test("unreviewed applications and Cargo modes fail before Docker invocation", async () => {
   const f = await fixture(false);
   try {

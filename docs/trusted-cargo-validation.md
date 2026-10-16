@@ -46,6 +46,23 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
   and only disposable writable output/tmp mounts. No Docker socket or host
   credentials are mounted. Raw build-script output is deliberately withheld
   from public Actions logs to avoid copying private dependency source there.
+- The protected-main full-stack CI uses **two distinct runner roles**.
+  `isolated-stack-build` is a credential-free public frontend job: it
+  executes npm only with public marketing/client checkouts and packages only
+  the resulting `dist` files. The immutable public archive carries the
+  expected source commit and has no private Cargo cache or compiled Rust
+  binary. The protected-main Rust job checks the exact-run artifact, rejects
+  path traversal, symlinks, device files, unknown paths and incorrect source
+  SHAs, then mounts only those public assets read-only into its disconnected
+  Rust container. **No npm lifecycle script runs on the private-source host**.
+- Inside that sandbox, the web release mode builds the web server and session
+  revoker, then executes the existing HTTP/schema/static-assets runtime smoke
+  against those ephemeral binaries. The API release mode builds and verifies
+  the named API binary. All build output stays in a disposable runner
+  directory; no private compiled binary or dependency cache is uploaded to
+  public GitHub Actions artifacts. The standalone `build.sh` remains a
+  full-stack local developer command but is never invoked on the private
+  CI host or the public-only frontend runner.
 - Docker isolation shares the host kernel; it is defense in depth, not a
   substitute for code review and separate hardened or ephemeral runners.
   The workflow still requires independent human approval of each exact SHA.
