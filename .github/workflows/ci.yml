@@ -177,7 +177,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Verify reviewed superproject and capture exact private gitlink
-        id: pinned-sidecar
+        id: pinned_sidecar
         shell: bash
         run: |
           set -euo pipefail
@@ -202,14 +202,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: canonical-cloud/canonical-sidecar.rs
-          ref: ${{ steps.pinned-sidecar.outputs.sha }}
+          ref: ${{ steps.pinned_sidecar.outputs.sha }}
           path: apps/canonical-sidecar.rs
           fetch-depth: 0
           persist-credentials: false
           token: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
       - name: Verify exact private sidecar pin remains on origin/main
         env:
-          PINNED_SIDECAR_SHA: ${{ steps.pinned-sidecar.outputs.sha }}
+          PINNED_SIDECAR_SHA: ${{ steps.pinned_sidecar.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
