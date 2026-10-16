@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile, readdir, lstat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const approved = Object.freeze({
@@ -92,7 +92,10 @@ export async function verifyFilePair(kind, manifestPath, lockPath) {
   async function walk(dir, depth) {
     assert.ok(depth <= 16, "Cargo manifest discovery exceeded depth bound");
     for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if ([".git", "node_modules", "target", "dist", ".next"].includes(entry.name)) continue;
+      // Vendored demos outside the approved workspace do not enter Cargo's
+      // dependency graph. Path dependencies into them are separately forbidden.
+      if ([".git", "node_modules", "target", "dist", ".next", "vendor"].includes(entry.name) ||
+          (depth === 0 && entry.name === "scripts")) continue;
       const path = join(dir, entry.name);
       if (entry.isSymbolicLink()) {
         assert.fail("unreviewed symbolic link in Cargo source tree: " + path);
@@ -112,7 +115,39 @@ export async function verifyFilePair(kind, manifestPath, lockPath) {
     }
   }
   await walk(root, 0);
-  return checkGitSources(kind, await readFile(manifestPath, "utf8"),
+  const rootManifest = await readFile(manifestPath, "utf8");
+  const manifests = [[manifestPath, rootManifest], ...extra];
+  const allowedLocal = kind === "web"
+    ? new Set(["crates/canonical-auth", "crates/canonical-config",
+      "crates/canonical-session", "crates/canonical-store",
+      "services/canonical-session-revoker"])
+    : new Set();
+
+  // A path dependency cannot silently point at excluded vendor/demo sources.
+  // For this repository, only the established extracted web crates/services
+  // are approved local packages; changes to this graph require review.
+  for (const [pathLabel, body] of manifests) {
+    for (const original of body.split(/\r?\n/)) {
+      const line = original.trim();
+      if (line.startsWith("#") || !/\bpath\s*=/.test(line)) continue;
+      const match = line.match(/(?:^|[,{\s])path\s*=\s*"([^"]+)"/);
+      assert.ok(match, "unreviewed Cargo path dependency syntax: " + pathLabel);
+      const normalized = resolve(dirname(pathLabel), match[1]);
+      const relative = [...allowedLocal].find(local => normalized === resolve(root, local));
+      assert.ok(relative, "unapproved local Cargo path dependency: " + pathLabel + " -> " + match[1]);
+    }
+  }
+  if (kind === "web") {
+    const match = rootManifest.match(/\bmembers\s*=\s*\[([\s\S]*?)\]/);
+    assert.ok(match, "web workspace must declare reviewed member paths");
+    const members = [...match[1].matchAll(/"([^"]+)"/g)].map(m => m[1]);
+    assert.deepEqual([...new Set(members)].sort(), [".", ...allowedLocal].sort(),
+      "web workspace member set changed without security review");
+  } else {
+    assert.doesNotMatch(rootManifest, /\bmembers\s*=\s*\[/,
+      "API workspace membership was changed without review");
+  }
+  return checkGitSources(kind, rootManifest,
     await readFile(lockPath, "utf8"), extra);
 }
 
