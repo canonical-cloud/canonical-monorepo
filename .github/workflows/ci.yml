@@ -162,48 +162,58 @@ jobs:
         run: bash scripts/stack-smoke.sh
 
   private-sidecar-contract:
-    # No private repository checkout on pull_request or workflow_dispatch.
+    # A private checkout is allowed only for a trusted push to protected main.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
-    env:
-      PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact trusted superproject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: false
           ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Verify reviewed main commit and Git tree
+      - name: Verify reviewed superproject and capture exact private gitlink
+        id: pinned-sidecar
+        shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           git rev-parse HEAD
           git rev-parse 'HEAD^{tree}'
-      - name: Require private sidecar read access before release
-        if: env.PRIVATE_SUBMODULE_TOKEN == ''
+          test "$(git config -f .gitmodules --get submodule.apps/canonical-sidecar.rs.private)" = true
+          pinned_sha="$(git rev-parse HEAD:apps/canonical-sidecar.rs)"
+          [[ "$pinned_sha" =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$pinned_sha" >> "$GITHUB_OUTPUT"
+      - name: Require approved read-only private sidecar credential
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
+        shell: bash
         run: |
-          echo '::error::Required private sidecar pin could not be verified: configure the repository-scoped read-only credential.'
-          exit 1
-      - name: Check out private sidecar with repository-scoped read secret
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+          set -euo pipefail
+          if [[ -z "${PRIVATE_SUBMODULE_TOKEN:-}" ]]; then
+            echo '::error::Required private sidecar pin could not be verified; configure read-only private sidecar checkout access.'
+            exit 1
+          fi
+      - name: Check out exact immutable private sidecar gitlink
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: canonical-cloud/canonical-sidecar.rs
-          ref: main
+          ref: ${{ steps.pinned-sidecar.outputs.sha }}
           path: apps/canonical-sidecar.rs
           fetch-depth: 0
           persist-credentials: false
           token: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
-      - name: Verify pinned private sidecar is reachable from main
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+      - name: Verify exact private sidecar pin remains on origin/main
+        env:
+          PINNED_SIDECAR_SHA: ${{ steps.pinned-sidecar.outputs.sha }}
+        shell: bash
         run: |
           set -euo pipefail
-          pinned_sha="$(git rev-parse HEAD:apps/canonical-sidecar.rs)"
-          git -C apps/canonical-sidecar.rs cat-file -e "${pinned_sha}^{commit}"
-          git -C apps/canonical-sidecar.rs merge-base --is-ancestor "$pinned_sha" HEAD
-          test "$(git config -f .gitmodules --get submodule.apps/canonical-sidecar.rs.private)" = true
-          echo "private sidecar pin ${pinned_sha} is reachable from canonical-sidecar.rs/main"
+          test "$(git -C apps/canonical-sidecar.rs rev-parse HEAD)" = "$PINNED_SIDECAR_SHA"
+          git -C apps/canonical-sidecar.rs cat-file -e "${PINNED_SIDECAR_SHA}^{commit}"
+          git -C apps/canonical-sidecar.rs merge-base --is-ancestor "$PINNED_SIDECAR_SHA" refs/remotes/origin/main
+          echo "Verified exact pinned private sidecar commit $PINNED_SIDECAR_SHA on origin/main"
