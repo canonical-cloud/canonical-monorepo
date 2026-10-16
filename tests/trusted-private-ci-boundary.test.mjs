@@ -14,7 +14,8 @@ function job(name, next) {
 }
 const publicTest = job("test", "integration-build");
 const privateCargo = job("integration-build", "isolated-stack-build");
-const separateStack = job("isolated-stack-build", "private-sidecar-contract");
+const separateStack = job("isolated-stack-build", "public-artifact-contract");
+const publicArtifact = job("public-artifact-contract", "private-sidecar-contract");
 const privateSidecar = job("private-sidecar-contract");
 
 test("workflow scope contains no private credential env", () => {
@@ -57,7 +58,7 @@ test("private Cargo token only exists in fetch step, not compiled or cached on h
 test("public frontends are mandatory on independent runner and cannot compile private Rust", () => {
   assert.match(separateStack, /github\.repository == 'canonical-cloud\/canonical-monorepo'/);
   assert.match(separateStack, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
-  assert.match(privateCargo, /needs: \[test, isolated-stack-build\]/);
+  assert.match(privateCargo, /needs: \[test, isolated-stack-build, public-artifact-contract\]/);
   assert.doesNotMatch(separateStack, /needs: integration-build/);
   assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
   assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
@@ -100,4 +101,13 @@ test("sidecar token is never job-wide and checkout uses exact immutable Gitlink"
   assert.match(privateSidecar, /merge-base --is-ancestor "\$PINNED_SIDECAR_SHA" refs\/remotes\/origin\/main/);
   assert.doesNotMatch(publicTest, /secrets\./);
   assert.doesNotMatch(privateCargo, /CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN/);
+});
+
+test("actual public frontend artifact is checked on separate runner before private fetch", () => {
+  assert.match(publicArtifact, /needs: isolated-stack-build/);
+  assert.match(publicArtifact, /actions\/download-artifact@[a-f0-9]{40}/);
+  assert.match(publicArtifact, /verify-public-frontends\.py/);
+  assert.match(publicArtifact, /github\.event\.pull_request\.head\.sha \|\| github\.sha/);
+  assert.doesNotMatch(publicArtifact, /PRIVATE_CARGO_TOKEN|secrets\.|CANONICAL_PRIVATE_CARGO_CACHE|cargo (?:build|fetch|test)/);
+  assert.match(privateCargo, /needs: \[test, isolated-stack-build, public-artifact-contract\]/);
 });
