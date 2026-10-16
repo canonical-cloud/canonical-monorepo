@@ -202,6 +202,22 @@ jobs:
             test ! -e "$app/.cargo/config.toml"
             test ! -e "$app/.cargo/config"
           done
+      - name: Audit public lockfiles and prepare advisory tooling before private fetch
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All networked installation and advisory queries run before the
+          # runner receives private Cargo source or private Git credentials.
+          cargo +1.95.0 install cargo-audit --locked --version 0.22.2
+          (
+            cd apps/canonical-web-server.rs
+            cargo audit --deny unmaintained --deny unsound --deny yanked \
+              --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235
+          )
+          (
+            cd apps/canonical-api-server.rs
+            cargo audit --deny unmaintained --deny unsound --deny yanked
+          )
       - name: Fetch pinned private dependencies only (no build scripts)
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
@@ -227,23 +243,9 @@ jobs:
           set -euo pipefail
           bash .github/scripts/offline-rust-review.sh web lock
           bash .github/scripts/offline-rust-review.sh api lock
-      - name: Install pinned cargo-audit without private credentials
+      - name: Prove rkyv graph reachability in network-disabled sandbox
         shell: bash
-        run: cargo +1.95.0 install cargo-audit --locked --version 0.22.2
-      - name: Validate rkyv reachability and audit both Rust lockfiles
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            cd apps/canonical-web-server.rs
-            bash scripts/check-rkyv-active-graph.sh
-            cargo audit --deny unmaintained --deny unsound --deny yanked \
-              --ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235
-          )
-          (
-            cd apps/canonical-api-server.rs
-            cargo audit --deny unmaintained --deny unsound --deny yanked
-          )
+        run: bash .github/scripts/offline-rust-review.sh web rkyv
       - name: Run both Rust workspaces offline with network and public-log isolation
         shell: bash
         run: |

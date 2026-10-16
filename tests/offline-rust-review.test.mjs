@@ -99,10 +99,17 @@ test("failed private compilation does not publish its output into Actions logs",
   } finally { await f.close(); }
 });
 
+test("rkyv inspection runs only in network-disabled web sandbox, never host", async () => {
+  const source = await readFile(launcher, "utf8");
+  assert.match(source, /rkyv\) \[\[ "\$app" == web \]\]/);
+  assert.match(source, /bash \/src\/scripts\/check-rkyv-active-graph\.sh/);
+  assert.match(source, /--network none/);
+  assert.match(source, /target=\/cargo-cache,readonly/);
+});
 test("unreviewed applications and Cargo modes fail before Docker invocation", async () => {
   const f = await fixture(false);
   try {
-    for (const [app,task] of [["attacker","test"],["web","shell"],["api","run"],["web","publish"]]) {
+    for (const [app,task] of [["attacker","test"],["web","shell"],["api","run"],["api","rkyv"],["web","publish"]]) {
       const r = execute(f,app,task);
       assert.notEqual(r.status,0);
       assert.ok(!r.stdout.includes(secretCanary));
