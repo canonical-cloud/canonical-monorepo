@@ -62,10 +62,23 @@ test("public frontends are mandatory on independent runner and cannot compile pr
   assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
   assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE|actions\/upload-artifact/);
 });
-test("release binaries never leave the sandbox for GitHub Actions artifacts", () => {
+test("only public frontend assets are uploaded, no Rust binaries or cache", () => {
   assert.match(privateCargo, /for mode in lock fmt clippy test release; do/);
   assert.match(privateCargo, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
-  assert.doesNotMatch(workflow, /actions\/upload-artifact|actions\/download-artifact|gh release upload/);
+  assert.match(separateStack, /actions\/upload-artifact@[a-f0-9]{40}/);
+  assert.match(separateStack, /canonical-public-frontends\.tar\.gz/);
+  assert.doesNotMatch(privateCargo, /actions\/upload-artifact|target\/release|\.\/build\.sh/);
+  assert.doesNotMatch(workflow, /gh release upload/);
+});
+test("public asset download and strict archive verification occur before credentialed Cargo fetch", () => {
+  const fetched = privateCargo.indexOf("      - name: Fetch immutable private Rust dependencies");
+  const downloaded = privateCargo.indexOf("      - name: Download exact-run public frontend artifact");
+  const verified = privateCargo.indexOf("      - name: Validate public artifact and source commit");
+  assert.ok(downloaded > 0 && downloaded < verified && verified < fetched);
+  assert.match(privateCargo.slice(downloaded, fetched), /verify-public-frontends\.py/);
+  assert.match(privateCargo.slice(downloaded, fetched), /"\$output" "\$GITHUB_SHA"/);
+  assert.doesNotMatch(privateCargo, /bash \.github\/scripts\/build-public-frontends\.sh/);
+  assert.doesNotMatch(privateCargo.slice(fetched), /npm ci|npm install|actions\/download-artifact/);
 });
 test("missing sidecar credential fails closed only after exact pinned SHA is captured", () => {
   assert.match(privateSidecar, /- name: Require approved read-only private sidecar credential/);
