@@ -119,7 +119,9 @@ test("review image toolchain is built by a pinned-local-ID helper before private
   assert.doesNotMatch(prep, /secrets\.|PRIVATE_CARGO_TOKEN/);
   assert.match(imageScript, /docker pull "\$base"/);
   assert.match(imageScript, /docker build --pull=false/);
-  assert.match(imageScript, /FROM \$\{BASE_ID\}/);
+  assert.match(imageScript, /FROM \$\{BASE_REF\}/);
+  assert.match(imageScript, /docker tag "\$base_id" "\$base_ref"/);
+  assert.match(imageScript, /test "\$\(docker image inspect --format/);
   assert.match(imageScript, /rustup component add rustfmt clippy/);
   assert.match(imageScript, /docker image inspect --format '\{\{\.Id\}\}'/);
   assert.match(imageScript, /\^sha256:\[a-f0-9\]\{64\}\$/);
