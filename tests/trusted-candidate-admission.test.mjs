@@ -62,3 +62,25 @@ test("reviewer identity is matched case-insensitively against the PR author", ()
   f.reviews[0].user.login = "AuThOr";
   assert.throws(() => validateCandidate(f));
 });
+
+test("second trusted reviewer requesting changes blocks an otherwise approved candidate", () => {
+  const f = fixture();
+  f.reviews.push({ state: "CHANGES_REQUESTED", commit_id: head,
+    author_association: "MEMBER", submitted_at: "2026-10-16T20:00:00Z",
+    user: { login: "second-reviewer" } });
+  assert.throws(() => validateCandidate(f), /outstanding trusted reviewer changes request/);
+});
+test("a dismissed trusted changes request does not override a separate valid approval", () => {
+  const f = fixture();
+  f.reviews.push({ state: "DISMISSED", commit_id: head,
+    author_association: "MEMBER", submitted_at: "2026-10-16T20:00:00Z",
+    user: { login: "second-reviewer" } });
+  assert.equal(validateCandidate(f).head, head);
+});
+test("untrusted outsider comment or changes request never grants approval", () => {
+  const f = fixture();
+  f.reviews = [{ state: "CHANGES_REQUESTED", commit_id: head,
+    author_association: "NONE", submitted_at: "2026-10-16T20:00:00Z",
+    user: { login: "external" } }];
+  assert.throws(() => validateCandidate(f), /current-commit approval/);
+});
