@@ -111,7 +111,7 @@ test("filesystem scan rejects Cargo config rewrites and symlinked candidate inpu
     const root = join(dir, "app");
     await mkdir(root);
     const f = fixture("web");
-    const workspace = '[workspace]\\nmembers = [".", "crates/canonical-auth", "crates/canonical-config", "crates/canonical-session", "crates/canonical-store", "services/canonical-session-revoker"]\\n';
+    const workspace = '[workspace]\nmembers = [".", "crates/canonical-auth", "crates/canonical-config", "crates/canonical-session", "crates/canonical-store", "services/canonical-session-revoker"]\n';
     await writeFile(join(root, "Cargo.toml"), workspace + f.manifest);
     await writeFile(join(root, "Cargo.lock"), f.lock);
     await mkdir(join(root, "crates", "x"), { recursive: true });
