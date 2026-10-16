@@ -81,6 +81,19 @@ test("Git credential fill never supplies a password to a lookalike hostname", ()
   assert.ok(!r.stdout.includes(fakeToken));
   assert.ok(!r.stderr.includes(fakeToken));
 });
+test("actual Git prompts with one trailing display space are accepted", () => {
+  const username = ask("Username for 'https://github.com': ");
+  const password = ask("Password for 'https://x-access-token@github.com': ");
+  assert.equal(username.status, 0);
+  assert.equal(username.stdout, "x-access-token\n");
+  assert.equal(password.status, 0);
+  assert.equal(password.stdout, fakeToken + "\n");
+});
+test("two trailing spaces on Git prompt are rejected", () => {
+  const r = ask("Password for 'https://x-access-token@github.com':  ");
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout, "");
+});
 const forbidden = [
   "Password for 'https://github.com':",
   "Password for 'https://evilgithub.com':",
