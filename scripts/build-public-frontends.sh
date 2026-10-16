@@ -14,5 +14,6 @@ echo "==> Typecheck, test and build public HTMX/IndexedDB client"
 (cd "$CLIENT" && npm ci && npm run typecheck && npm test && npm run build)
 test -f "$MARKETING/dist/index.html"
 test -d "$CLIENT/dist"
-find "$CLIENT/dist" -type f \( -name '*.js' -o -name '*.css' \) -print -quit | grep -q .
+asset="$(find "$CLIENT/dist" -type f \( -name '*.js' -o -name '*.css' \) -print -quit)"
+test -n "$asset"
 echo "Public frontend builds passed; no private Cargo source was accessed."
