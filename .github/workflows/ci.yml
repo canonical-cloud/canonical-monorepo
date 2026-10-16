@@ -200,7 +200,7 @@ jobs:
         run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
 
   integration-build:
-    needs: [test, isolated-stack-build]
+    needs: [test, isolated-stack-build, public-artifact-contract]
     # Only a reviewed push to protected main may expose private Cargo credentials.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
     runs-on: ubuntu-latest
@@ -346,6 +346,41 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+
+  public-artifact-contract:
+    needs: isolated-stack-build
+    if: github.repository == 'canonical-cloud/canonical-monorepo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout exact public candidate without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify candidate Git commit and tree
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git rev-parse 'HEAD^{tree}'
+      - name: Download only the public frontend artifact from this run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: canonical-public-frontends-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/public-download
+      - name: Validate real public-only archive contents and exact commit
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-public-frontends.py \
+            "$RUNNER_TEMP/public-download/canonical-public-frontends.tar.gz" \
+            "$RUNNER_TEMP/public-artifact-verified" "$EXPECTED_HEAD"
 
   private-sidecar-contract:
     # A private checkout is allowed only for a trusted push to protected main.
