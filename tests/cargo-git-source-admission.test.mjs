@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { approved, checkGitSources } from "../scripts/check-cargo-git-sources.mjs";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { approved, checkGitSources, verifyFilePair } from "../scripts/check-cargo-git-sources.mjs";
 
 function fixture(kind) {
   const pins = Object.entries(approved[kind]);
@@ -87,4 +90,44 @@ test("reject unsupported single-quoted lockfile Git source", () => {
 test("reject unknown application types", () => {
   const f = fixture("web");
   assert.throws(() => checkGitSources("other", f.manifest, f.lock), /unknown Cargo application/);
+});
+
+test("reject nested workspace Git origin injection absent from root manifest", () => {
+  const f = fixture("web");
+  const nested = 'stealer = { git = "https://github.com/attacker/steal", rev = "' + "d".repeat(40) + '" }';
+  assert.throws(() => checkGitSources("web", f.manifest, f.lock,
+    [["crates/canonical-store/Cargo.toml", "[dependencies]\n" + nested]]), /unapproved Cargo Git repository/);
+});
+test("permit nested manifests only when they use approved exact immutable pins", () => {
+  const f = fixture("web");
+  const [url, rev] = Object.entries(approved.web)[0];
+  const nested = 'approved = { git = "' + url + '", rev = "' + rev + '" }';
+  assert.equal(checkGitSources("web", f.manifest, f.lock,
+    [["crates/canonical-store/Cargo.toml", "[dependencies]\n" + nested]]).sources, 3);
+});
+test("filesystem scan rejects Cargo config rewrites and symlinked candidate inputs", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cargo-admission-"));
+  try {
+    const root = join(dir, "app");
+    await mkdir(root);
+    const f = fixture("web");
+    await writeFile(join(root, "Cargo.toml"), f.manifest);
+    await writeFile(join(root, "Cargo.lock"), f.lock);
+    await mkdir(join(root, "crates", "x"), { recursive: true });
+    await writeFile(join(root, "crates", "x", "Cargo.toml"),
+      'approved = { git = "https://github.com/attacker/malicious", rev = "' + "e".repeat(40) + '" }\n');
+    await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
+      /unapproved Cargo Git repository/);
+    await writeFile(join(root, "crates", "x", "Cargo.toml"), "[dependencies]\nserde = '1'\n");
+    await mkdir(join(root, ".cargo"));
+    await writeFile(join(root, ".cargo", "config.toml"), '[source.crates-io]\nreplace-with = "attacker"\n');
+    await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
+      /unreviewed Cargo config override/);
+    await rm(join(root, ".cargo", "config.toml"));
+    await symlink(join(root, "Cargo.toml"), join(root, "crates", "x", "link"));
+    await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
+      /unreviewed symbolic link/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
