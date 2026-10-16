@@ -41,18 +41,18 @@ jobs:
 
   offline-container-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     permissions:
       contents: read
     steps:
-      - name: Fetch approved Rust image before any private source is loaded
+      - name: Checkout audited sandbox launcher from exact PR commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build fully equipped SHA-identified Rust test image before secrets
         shell: bash
-        run: |
-          set -euo pipefail
-          docker pull rust:1.95.0-bookworm >"$RUNNER_TEMP/rust-smoke-image.log" 2>&1
-          image_id="$(docker image inspect --format '{{.Id}}' rust:1.95.0-bookworm)"
-          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
-          echo "RUST_SMOKE_IMAGE=$image_id" >> "$GITHUB_ENV"
+        run: bash .github/scripts/prepare-rust-review-image.sh
       - name: Prove image cannot reach a network, write rootfs or gain capabilities
         shell: bash
         run: |
@@ -74,11 +74,6 @@ jobs:
               rustc /tmp/sandbox.rs -o /out/sandbox
               /out/sandbox
             '
-      - name: Checkout audited sandbox launcher from exact PR commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
       - name: Run actual Cargo lock, fmt, Clippy and test in isolated container
         shell: bash
         run: |
