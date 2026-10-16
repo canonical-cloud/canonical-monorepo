@@ -165,6 +165,22 @@ jobs:
       - name: Install Rust 1.95
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Prepare disposable Rust image and private Cargo cache before credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          image='rust:1.95.0-bookworm'
+          docker pull "$image" >"$RUNNER_TEMP/rust-image-pull.log" 2>&1
+          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
+          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          cache="$RUNNER_TEMP/canonical-private-cargo-review-cache"
+          mkdir -p "$cache"
+          chmod 0700 "$cache"
+          printf 'CANONICAL_RUST_IMAGE_ID=%s\n' "$image_id" >> "$GITHUB_ENV"
+          printf 'CANONICAL_PRIVATE_CARGO_CACHE=%s\n' "$cache" >> "$GITHUB_ENV"
+          echo "Prepared immutable local Rust container image ID: $image_id"
+          docker run --rm --pull=never --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges "$image_id" rustc --version
       - name: Revalidate candidate reviews after environment approval, before private fetch
         shell: bash
         env:
@@ -208,20 +224,16 @@ jobs:
           trap 'rm -f -- "$askpass"' EXIT
           export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
+          # Isolated cache: never reuse host $HOME/.cargo for private PR source.
+          export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
           cargo +1.95.0 fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
           cargo +1.95.0 fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
-      - name: Verify regenerated Cargo.lock parity without credentials
-        env:
-          CARGO_NET_OFFLINE: "true"
+      - name: Verify both lockfiles in network-disabled, secret-free containers
         shell: bash
         run: |
           set -euo pipefail
-          for app in apps/canonical-web-server.rs apps/canonical-api-server.rs; do
-            cp "$app/Cargo.lock" "$RUNNER_TEMP/$(basename "$app").original.lock"
-            cargo +1.95.0 generate-lockfile --offline --manifest-path "$app/Cargo.toml"
-            cmp "$app/Cargo.lock" "$RUNNER_TEMP/$(basename "$app").original.lock"
-            echo "Verified generated Cargo.lock parity: $app"
-          done
+          bash .github/scripts/offline-rust-review.sh web lock
+          bash .github/scripts/offline-rust-review.sh api lock
       - name: Install pinned cargo-audit without private credentials
         shell: bash
         run: cargo +1.95.0 install cargo-audit --locked --version 0.22.2
@@ -239,17 +251,15 @@ jobs:
             cd apps/canonical-api-server.rs
             cargo audit --deny unmaintained --deny unsound --deny yanked
           )
-      - name: Format, Clippy and Rust tests (no credentials)
-        env:
-          CARGO_NET_OFFLINE: "true"
+      - name: Run both Rust workspaces offline with network and public-log isolation
         shell: bash
         run: |
           set -euo pipefail
-          cargo +1.95.0 fmt --all --check --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          cargo +1.95.0 clippy --manifest-path apps/canonical-web-server.rs/Cargo.toml --workspace --all-targets --locked -- -D warnings
-          cargo +1.95.0 test --manifest-path apps/canonical-web-server.rs/Cargo.toml --workspace --all-targets --locked
-          cargo +1.95.0 clippy --manifest-path apps/canonical-api-server.rs/Cargo.toml --all-targets --locked -- -D warnings
-          cargo +1.95.0 test --manifest-path apps/canonical-api-server.rs/Cargo.toml --all-targets --all-features --locked
+          for app in web api; do
+            for mode in fmt clippy test; do
+              bash .github/scripts/offline-rust-review.sh "$app" "$mode"
+            done
+          done
       - name: Record validation limitation
         shell: bash
         run: |
