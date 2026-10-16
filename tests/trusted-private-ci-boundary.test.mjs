@@ -60,7 +60,8 @@ test("public frontends are mandatory on independent runner and cannot compile pr
   assert.match(privateCargo, /needs: \[test, isolated-stack-build\]/);
   assert.doesNotMatch(separateStack, /needs: integration-build/);
   assert.match(separateStack, /run: bash \.github\/scripts\/build-public-frontends\.sh/);
-  assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE|actions\/upload-artifact/);
+  assert.doesNotMatch(separateStack, /cargo (?:build|fetch|test)|\.\/build\.sh|secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
+  assert.match(separateStack, /actions\/upload-artifact@[a-f0-9]{40}/);
 });
 test("only public frontend assets are uploaded, no Rust binaries or cache", () => {
   assert.match(privateCargo, /for mode in lock fmt clippy test release; do/);
