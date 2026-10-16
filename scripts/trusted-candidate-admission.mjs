@@ -30,11 +30,14 @@ export function validateCandidate({ pr, reviews, commit, number, head, tree }) {
   }
   const author = pr.user?.login?.toLowerCase();
   assert.ok(author, "PR author is required");
-  const approved = [...latest.values()].some(review =>
-    review.state === "APPROVED" &&
-    review.commit_id === head &&
+  const latestTrusted = [...latest.values()].filter(review =>
     review.user.login.toLowerCase() !== author &&
     authorizedAssociations.has(review.author_association)
+  );
+  assert.ok(!latestTrusted.some(review => review.state === "CHANGES_REQUESTED"),
+    "outstanding trusted reviewer changes request blocks private dependency access");
+  const approved = latestTrusted.some(review =>
+    review.state === "APPROVED" && review.commit_id === head
   );
   assert.ok(approved, "independent current-commit approval by a trusted reviewer required");
   return { head, tree, number: Number(number) };
