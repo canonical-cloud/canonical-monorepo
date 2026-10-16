@@ -227,12 +227,18 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
-        with:
-          workspaces: |
-            apps/canonical-web-server.rs
-            apps/canonical-api-server.rs
+      - name: Prepare full Rust tools and isolated private cache before credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-rust-review-image.sh
+          cache="$RUNNER_TEMP/canonical-main-private-cargo-cache"
+          mkdir -p "$cache"
+          chmod 0700 "$cache"
+          echo "CANONICAL_PRIVATE_CARGO_CACHE=$cache" >> "$GITHUB_ENV"
+      - name: Install matching host Rust toolchain for fetch-only phase
+        shell: bash
+        run: rustup toolchain install 1.95.0 --profile minimal
       - name: Reject unexpected Git origins before private Cargo credential is exposed
         run: node scripts/check-cargo-git-sources.mjs
       - name: Fetch immutable private Rust dependencies without executing build code
@@ -251,28 +257,64 @@ jobs:
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
-          cargo fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          cargo fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
-      - name: Rust web modularization contracts without credentials
+          export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
+          cargo +1.95.0 fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          cargo +1.95.0 fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
+      - name: Verify Rust lockfiles and compile without token, network or public logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for app in web api; do
+            for mode in lock fmt clippy test; do
+              bash .github/scripts/offline-rust-review.sh "$app" "$mode"
+            done
+          done
+
+  # The full stack must build on a DIFFERENT ephemeral runner: no private
+  # dependency fetch cache, credential helper or private token is accessible.
+  # This remains a required protected-main gate, not a warning or soft skip.
+  isolated-stack-build:
+    needs: integration-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed main without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+          persist-credentials: false
+      - name: Verify exact Git tree
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git rev-parse 'HEAD^{tree}'
+      - name: Initialize only reviewed public application gitlinks
+        run: |
+          set -euo pipefail
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule sync --recursive
+          git submodule update --init --recursive -- \
+            apps/canonical-web-server.rs \
+            apps/canonical-api-server.rs \
+            apps/canonical-marketing-site.web \
+            apps/canonical-interfaces \
+            apps/canonical-mcp-server.rs
+      - name: Run full stack checks on independent runner without private source
         env:
           CARGO_NET_OFFLINE: "true"
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          --workspace --all-targets
-      - name: Rust API contracts without credentials
-        env:
-          CARGO_NET_OFFLINE: "true"
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-api-server.rs/Cargo.toml
-          --all-targets --all-features
-      - name: Build the pinned public stack without credentials
-        env:
-          CARGO_NET_OFFLINE: "true"
-        run: ./build.sh
-      - name: Stack smoke (runtime contracts vs pinned interfaces)
-        run: bash scripts/stack-smoke.sh
+          GIT_TERMINAL_PROMPT: "0"
+          npm_config_offline: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$RUNNER_TEMP/canonical-public-stack-cargo-home"
+          mkdir -p "$CARGO_HOME"
+          ./build.sh
+          bash scripts/stack-smoke.sh
 
   private-sidecar-contract:
     # A private checkout is allowed only for a trusted push to protected main.
