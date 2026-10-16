@@ -13,8 +13,10 @@ case "$app" in
   api) source_dir="$GITHUB_WORKSPACE/apps/canonical-api-server.rs" ;;
   *) echo "::error::unapproved application" >&2; exit 2 ;;
 esac
-case "$mode" in lock|fmt|clippy|test|rkyv) ;; *)
-  echo "::error::unapproved Cargo operation" >&2; exit 2 ;;
+case "$mode" in
+  lock|fmt|clippy|test) ;;
+  rkyv) [[ "$app" == web ]] || { echo "::error::rkyv proof is web-only" >&2; exit 2; } ;;
+  *) echo "::error::unapproved Cargo operation" >&2; exit 2 ;;
 esac
 
 image="$CANONICAL_RUST_IMAGE_ID"
