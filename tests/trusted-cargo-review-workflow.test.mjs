@@ -80,3 +80,29 @@ test("workflow does not publish artifacts or modify release pointers", () => {
   assert.doesNotMatch(workflow, /docker\s+push|--push|git\s+push|curl.*POST.*\/releases/);
   assert.doesNotMatch(workflow, /contents:\s*write|packages:\s*write|id-token:\s*write/);
 });
+
+test("preflight grants only the read access GitHub needs for environment metadata", () => {
+  assert.match(preflight, /permissions:\s*\n\s+actions: read\s*\n\s+contents: read/);
+  assert.doesNotMatch(preflight, /actions: write|contents: write|secrets\./);
+});
+test("all pages of reviews are combined before source admission", () => {
+  assert.match(preflight, /gh api --paginate "repos\/\$repo\/pulls\/\$WEB_PR\/reviews\?per_page=100" \|\s*\n\s+jq -s 'add'/);
+  assert.match(trusted, /gh api --paginate "repos\/\$repo\/pulls\/\$WEB_PR\/reviews\?per_page=100" \|\s*\n\s+jq -s 'add'/);
+  assert.doesNotMatch(workflow, /reviews\?per_page=100" > /);
+});
+test("post-approval source review is rechecked immediately before token boundary", () => {
+  const afterGate = trusted.indexOf("      - name: Revalidate candidate reviews after environment approval");
+  const staticAdmission = trusted.indexOf("      - name: Pre-credential immutable Git source admission");
+  assert.ok(afterGate >= 0 && staticAdmission > afterGate && beginning > staticAdmission);
+  const fresh = trusted.slice(afterGate, staticAdmission);
+  assert.match(fresh, /node scripts\/trusted-candidate-admission\.mjs/);
+  assert.match(fresh, /WEB_SHA: \$\{\{ needs\.preflight\.outputs\.web_sha \}\}/);
+  assert.match(fresh, /WEB_TREE: \$\{\{ needs\.preflight\.outputs\.web_tree \}\}/);
+  assert.match(fresh, /WEB_PR: \$\{\{ needs\.preflight\.outputs\.web_pr \}\}/);
+  assert.doesNotMatch(fresh, /secrets\./);
+});
+test("preflight tree is confirmed against immutable checked-out Git tree", () => {
+  assert.match(preflight, /echo "web_tree=\$tree" >> "\$GITHUB_OUTPUT"/);
+  assert.match(trusted, /EXPECTED_TREE: \$\{\{ needs\.preflight\.outputs\.web_tree \}\}/);
+  assert.match(trusted, /test "\$\(git -C apps\/canonical-web-server\.rs rev-parse 'HEAD\^\{tree\}'\)" = "\$EXPECTED_TREE"/);
+});
