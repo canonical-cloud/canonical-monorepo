@@ -84,19 +84,23 @@ jobs:
           workspaces: |
             apps/canonical-web-server.rs
             apps/canonical-api-server.rs
-      - name: Rust API contracts
+      - name: Fetch immutable private Rust dependencies without executing build code
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
+        shell: bash
         run: |
           set -euo pipefail
           if [ -z "${PRIVATE_CARGO_TOKEN:-}" ]; then
-            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
+            echo '::error::Missing CANONICAL_PRIVATE_CARGO_READ_TOKEN for pinned private Canonical Rust dependencies; Rust builds were not started.'
             exit 1
           fi
-
           askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
           cat >"$askpass" <<'SH'
           #!/bin/sh
+          case "$1" in
+            *github.com*) ;;
+            *) exit 1 ;;
+          esac
           case "$1" in
             *Username*) printf '%s\n' 'x-access-token' ;;
             *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
@@ -104,21 +108,30 @@ jobs:
           esac
           SH
           chmod 700 "$askpass"
-
-          # Remove the temporary executable on success, error or cancellation.
           trap 'rm -f -- "$askpass"' EXIT
           export GIT_ASKPASS="$askpass"
           export GIT_TERMINAL_PROMPT=0
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
-          cargo test --locked \
-            --manifest-path apps/canonical-web-server.rs/Cargo.toml \
-            --workspace --all-targets
-          cargo test --locked \
-            --manifest-path apps/canonical-api-server.rs/Cargo.toml \
-            --all-targets --all-features
-          # Builds the same reviewed submodule pins while credentials remain
-          # restricted to this single trusted step.
-          ./build.sh
+          cargo fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          cargo fetch --locked --manifest-path apps/canonical-api-server.rs/Cargo.toml
+      - name: Rust web modularization contracts without credentials
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: >-
+          cargo test --locked
+          --manifest-path apps/canonical-web-server.rs/Cargo.toml
+          --workspace --all-targets
+      - name: Rust API contracts without credentials
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: >-
+          cargo test --locked
+          --manifest-path apps/canonical-api-server.rs/Cargo.toml
+          --all-targets --all-features
+      - name: Build the pinned public stack without credentials
+        env:
+          CARGO_NET_OFFLINE: "true"
+        run: ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)
         run: bash scripts/stack-smoke.sh
 
