@@ -38,6 +38,20 @@ out="$(mktemp -d "$RUNNER_TEMP/canonical-offline-rust.XXXXXXXX")"
 trap 'rm -rf -- "$out"' EXIT
 chmod 0700 "$out"
 
+# Public artifacts are prepared and validated by a different runner; the
+# private build host never executes npm lifecycle scripts.
+public_mounts=()
+if [[ "$mode" == release && "$app" == web ]]; then
+  public_root="${CANONICAL_PUBLIC_ASSETS_ROOT:?verified public artifact required}"
+  [[ "$public_root" == "$RUNNER_TEMP/"* && -d "$public_root" ]] || {
+    echo "::error::public frontend artifact must live under ephemeral runner dir" >&2
+    exit 1
+  }
+  test -f "$public_root/apps/canonical-marketing-site.web/dist/index.html"
+  test -d "$public_root/apps/canonical-web-server.rs/client/dist"
+  public_mounts+=(--mount "type=bind,source=$public_root,target=/public-build,readonly")
+fi
+
 # Build scripts, proc macros and Rust tests run native code. They get no token,
 # no network, no Docker socket, no host home and only throwaway write access.
 # Suppress stdout/stderr to prevent exfiltration through public Actions logs.
@@ -50,6 +64,7 @@ if docker run --rm --pull=never \
   --tmpfs /scratch:rw,nosuid,nodev,size=1g \
   --mount "type=bind,source=$source_dir,target=/src,readonly" \
   --mount "type=bind,source=$GITHUB_WORKSPACE,target=/review-repo,readonly" \
+  "${public_mounts[@]}" \
   --mount "type=bind,source=$cache,target=/cargo-cache,readonly" \
   --mount "type=bind,source=$out,target=/out" \
   -e CARGO_HOME=/scratch/cargo \
@@ -107,8 +122,8 @@ if docker run --rm --pull=never \
           # Run the existing release-stack runtime smoke inside THIS sandbox,
           # while its network namespace remains disconnected from the host.
           # Only public build outputs and the reviewed smoke scripts are used.
-          test -f /review-repo/apps/canonical-marketing-site.web/dist/index.html
-          test -d /review-repo/apps/canonical-web-server.rs/client/dist
+          test -f /public-build/apps/canonical-marketing-site.web/dist/index.html
+          test -d /public-build/apps/canonical-web-server.rs/client/dist
           test -f /review-repo/apps/canonical-interfaces/schema/api.schema.json
           command -v node >/dev/null
           command -v curl >/dev/null
@@ -121,8 +136,8 @@ if docker run --rm --pull=never \
           cp /review-repo/scripts/validate-against-schema.mjs /scratch/site/scripts/validate-against-schema.mjs
           ln -s /out/target/release/canonical-web-server /scratch/site/apps/canonical-web-server.rs/target/release/canonical-web-server
           ln -s /out/target/release/canonical-session-revoker /scratch/site/apps/canonical-web-server.rs/target/release/canonical-session-revoker
-          ln -s /review-repo/apps/canonical-web-server.rs/client/dist /scratch/site/apps/canonical-web-server.rs/client/dist
-          ln -s /review-repo/apps/canonical-marketing-site.web/dist /scratch/site/apps/canonical-marketing-site.web/dist
+          ln -s /public-build/apps/canonical-web-server.rs/client/dist /scratch/site/apps/canonical-web-server.rs/client/dist
+          ln -s /public-build/apps/canonical-marketing-site.web/dist /scratch/site/apps/canonical-marketing-site.web/dist
           ln -s /review-repo/apps/canonical-interfaces/schema/api.schema.json /scratch/site/apps/canonical-interfaces/schema/api.schema.json
           bash /scratch/site/scripts/stack-smoke.sh
         fi
