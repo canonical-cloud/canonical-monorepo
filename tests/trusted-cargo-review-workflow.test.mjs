@@ -67,6 +67,15 @@ test("after fetch, lock regeneration and Rust tests are offline and token-free",
   assert.match(afterFetch, /cargo \+1\.95\.0 clippy/);
   assert.match(afterFetch, /cargo \+1\.95\.0 test/);
 });
+test("RustSec auditing is strict and any rkyv exception requires a graph proof", () => {
+  assert.match(afterFetch, /cargo \+1\.95\.0 install cargo-audit --locked --version 0\.22\.2/);
+  assert.match(afterFetch, /bash scripts\/check-rkyv-active-graph\.sh/);
+  assert.match(afterFetch, /cargo audit --deny unmaintained --deny unsound --deny yanked/);
+  assert.match(afterFetch, /--ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235/);
+  const audits = afterFetch.match(/cargo audit --deny unmaintained/g) || [];
+  assert.equal(audits.length, 2, "both Rust lockfiles must be audited");
+  assert.doesNotMatch(fetchStep, /\bcargo audit\b/);
+});
 test("workflow does not publish artifacts or modify release pointers", () => {
   assert.doesNotMatch(workflow, /docker\s+push|--push|git\s+push|curl.*POST.*\/releases/);
   assert.doesNotMatch(workflow, /contents:\s*write|packages:\s*write|id-token:\s*write/);
