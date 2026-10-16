@@ -30,7 +30,19 @@ jobs:
       web_head: ${{ steps.verify.outputs.web_head }}
       web_tree: ${{ steps.verify.outputs.web_tree }}
     steps:
-      - name: Authorize an immutable, independently approved web PR commit
+      - name: Checkout exact trusted main admission implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify admission implementation is from main
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install Node for deterministic admission validation
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Require independently approved exact-source candidate
         id: verify
         shell: bash
         env:
@@ -43,26 +55,14 @@ jobs:
           [[ "$PR" =~ ^[1-9][0-9]{0,7}$ ]]
           [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$TREE" =~ ^[0-9a-f]{40}$ ]]
           repo='canonical-cloud/canonical-web-server.rs'
-          body="$(gh api "repos/$repo/pulls/$PR")"
-          jq -e --arg sha "$SHA" '
-            .state == "open" and .draft == false and .base.ref == "main"
-            and .head.sha == $sha and .head.repo.full_name == "canonical-cloud/canonical-web-server.rs"
-            and any(.labels[]?; .name == "trusted-private-ci")
-          ' <<<"$body" >/dev/null
-          author="$(jq -r '.user.login' <<<"$body")"
-          reviews="$(gh api "repos/$repo/pulls/$PR/reviews?per_page=100")"
-          jq -e --arg sha "$SHA" --arg author "$author" '
-            sort_by(.submitted_at) | group_by(.user.login) | map(.[-1]) |
-            any(.state == "APPROVED" and .commit_id == $sha and
-              .user.login != $author and
-              (.author_association == "OWNER" or .author_association == "MEMBER" or
-               .author_association == "COLLABORATOR"))
-          ' <<<"$reviews" >/dev/null
-          actual_tree="$(gh api "repos/$repo/git/commits/$SHA" --jq '.tree.sha')"
-          test "$actual_tree" = "$TREE"
+          gh api "repos/$repo/pulls/$PR" > "$RUNNER_TEMP/pr.json"
+          gh api "repos/$repo/pulls/$PR/reviews?per_page=100" > "$RUNNER_TEMP/reviews.json"
+          gh api "repos/$repo/git/commits/$SHA" > "$RUNNER_TEMP/commit.json"
+          node scripts/trusted-candidate-admission.mjs \
+            "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/reviews.json" \
+            "$RUNNER_TEMP/commit.json" "$PR" "$SHA" "$TREE"
           echo "web_head=$SHA" >> "$GITHUB_OUTPUT"
           echo "web_tree=$TREE" >> "$GITHUB_OUTPUT"
-          printf 'Approved head: %s; verified Git tree: %s\n' "$SHA" "$TREE"
 
   rust:
     needs: admission
