@@ -165,22 +165,15 @@ jobs:
       - name: Install Rust 1.95
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
-      - name: Prepare disposable Rust image and private Cargo cache before credentials
+      - name: Prepare complete disposable Rust toolchain and private cache before credentials
         shell: bash
         run: |
           set -euo pipefail
-          image='rust:1.95.0-bookworm'
-          docker pull "$image" >"$RUNNER_TEMP/rust-image-pull.log" 2>&1
-          image_id="$(docker image inspect --format '{{.Id}}' "$image")"
-          [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]]
+          bash .github/scripts/prepare-rust-review-image.sh
           cache="$RUNNER_TEMP/canonical-private-cargo-review-cache"
           mkdir -p "$cache"
           chmod 0700 "$cache"
-          printf 'CANONICAL_RUST_IMAGE_ID=%s\n' "$image_id" >> "$GITHUB_ENV"
           printf 'CANONICAL_PRIVATE_CARGO_CACHE=%s\n' "$cache" >> "$GITHUB_ENV"
-          echo "Prepared immutable local Rust container image ID: $image_id"
-          docker run --rm --pull=never --network none --read-only --cap-drop ALL \
-            --security-opt no-new-privileges "$image_id" rustc --version
       - name: Revalidate candidate reviews after environment approval, before private fetch
         shell: bash
         env:
