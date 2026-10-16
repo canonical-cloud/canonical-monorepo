@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-const helper = fileURLToPath(new URL("../scripts/ci-private-cargo-askpass.sh", import.meta.url));
+const helper = fileURLToPath(new URL("../.github/scripts/private-cargo-askpass.sh", import.meta.url));
 const fakeToken = "NON_SECRET_TEST_ONLY_TOKEN_12345";
 
 function ask(prompt, token = fakeToken) {
