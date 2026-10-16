@@ -51,12 +51,15 @@ def unpack(archive_name, output_name, expected_sha):
                 with tar.extractfile(member) as source, dest.open("xb") as target:
                     shutil.copyfileobj(source, target, 1024 * 1024)
                 dest.chmod(0o600)
-    assert (output / "source-commit.txt").read_text().strip() == expected_sha, (
-        "public asset artifact does not match exact mainline commit")
-    assert (output / "apps/canonical-marketing-site.web/dist/index.html").is_file()
+    if (output / "source-commit.txt").read_text().strip() != expected_sha:
+        raise ValueError("public asset artifact does not match exact source SHA")
+    if not (output / "apps/canonical-marketing-site.web/dist/index.html").is_file():
+        raise ValueError("missing public marketing build")
     client = output / "apps/canonical-web-server.rs/client/dist"
-    assert client.is_dir()
-    assert any(f.suffix in (".js", ".css") for f in client.rglob("*") if f.is_file())
+    if not client.is_dir() or not any(
+        f.suffix in (".js", ".css") for f in client.rglob("*") if f.is_file()
+    ):
+        raise ValueError("missing public client build")
     print("Verified regular public frontend artifacts and exact source SHA:", expected_sha)
 
 
