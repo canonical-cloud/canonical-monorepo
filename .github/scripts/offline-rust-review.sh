@@ -3,7 +3,7 @@
 # Docker sockets, or reusable outputs. Do not publish build-script logs.
 set -euo pipefail
 if [[ $# -ne 2 ]]; then
-  echo "::error::usage: offline-rust-review.sh web|api lock|fmt|clippy|test" >&2
+  echo "::error::usage: offline-rust-review.sh web|api lock|fmt|clippy|test|rkyv" >&2
   exit 2
 fi
 app="$1"
@@ -13,8 +13,10 @@ case "$app" in
   api) source_dir="$GITHUB_WORKSPACE/apps/canonical-api-server.rs" ;;
   *) echo "::error::unapproved application" >&2; exit 2 ;;
 esac
-case "$mode" in lock|fmt|clippy|test) ;; *)
-  echo "::error::unapproved Cargo operation" >&2; exit 2 ;;
+case "$mode" in
+  lock|fmt|clippy|test) ;;
+  rkyv) [[ "$app" == web ]] || { echo "::error::rkyv proof is web-only" >&2; exit 2; } ;;
+  *) echo "::error::unapproved Cargo operation" >&2; exit 2 ;;
 esac
 
 image="$CANONICAL_RUST_IMAGE_ID"
@@ -91,6 +93,10 @@ if docker run --rm --pull=never \
         else
           cargo test --manifest-path /src/Cargo.toml --workspace --all-targets --locked
         fi
+        ;;
+      rkyv)
+        test "$REVIEW_APP" = web
+        bash /src/scripts/check-rkyv-active-graph.sh
         ;;
       *) exit 2 ;;
     esac

@@ -69,14 +69,22 @@ test("after fetch, lock and build commands run only through networkless containe
   assert.match(afterFetch, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
   assert.doesNotMatch(afterFetch, /cargo \+1\.95\.0 (?:clippy|test|generate-lockfile)/);
 });
-test("RustSec auditing is strict and any rkyv exception requires a graph proof", () => {
-  assert.match(afterFetch, /cargo \+1\.95\.0 install cargo-audit --locked --version 0\.22\.2/);
-  assert.match(afterFetch, /bash scripts\/check-rkyv-active-graph\.sh/);
-  assert.match(afterFetch, /cargo audit --deny unmaintained --deny unsound --deny yanked/);
-  assert.match(afterFetch, /--ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235/);
-  const audits = afterFetch.match(/cargo audit --deny unmaintained/g) || [];
-  assert.equal(audits.length, 2, "both Rust lockfiles must be audited");
+test("RustSec installs and networked audits finish before any private dependency fetch", () => {
+  const beforeFetch = trusted.slice(0, beginning);
+  const gate = beforeFetch.indexOf("      - name: Audit public lockfiles and prepare advisory tooling");
+  assert.ok(gate >= 0);
+  const audits = beforeFetch.slice(gate);
+  assert.match(audits, /cargo \+1\.95\.0 install cargo-audit --locked --version 0\.22\.2/);
+  assert.match(audits, /cargo audit --deny unmaintained --deny unsound --deny yanked/);
+  assert.match(audits, /--ignore RUSTSEC-2026-0173 --ignore RUSTSEC-2026-0235/);
+  assert.equal((audits.match(/cargo audit --deny unmaintained/g) || []).length, 2);
+  assert.doesNotMatch(afterFetch, /cargo-audit|cargo audit --deny|scripts\/check-rkyv-active-graph\.sh/);
   assert.doesNotMatch(fetchStep, /\bcargo audit\b/);
+});
+test("untrusted rkyv executable is never run on host after private source fetch", () => {
+  assert.match(afterFetch, /bash \.github\/scripts\/offline-rust-review\.sh web rkyv/);
+  assert.doesNotMatch(afterFetch, /bash scripts\/check-rkyv-active-graph\.sh/);
+  assert.doesNotMatch(afterFetch, /cargo tree/);
 });
 test("workflow does not publish artifacts or modify release pointers", () => {
   assert.doesNotMatch(workflow, /docker\s+push|--push|git\s+push|curl.*POST.*\/releases/);

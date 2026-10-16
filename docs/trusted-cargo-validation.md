@@ -77,10 +77,12 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
 6. Require the logged monorepo commit/tree and web candidate commit/tree to
    match the reviewed revisions. The API is read from its pinned public
    monorepo gitlink.
-7. Verify credentialed `cargo fetch --locked` completes. All later
-   lock regeneration, format, Clippy, Rust tests, and RustSec audits run
-   **without the private token**. Missing credentials or missing dependency
-   revisions are failures, never skips.
+7. Install advisory tooling and run both locked RustSec audits **before**
+   private Cargo source is fetched. Then verify credentialed `cargo fetch
+   --locked` completes. All subsequent lock regeneration, formatting, Clippy,
+   Rust tests and the candidate-owned `rkyv` graph script must execute in the
+   network-disabled sandbox without the private token. Missing credentials,
+   missing dependency revisions or a failed graph proof are hard failures.
 8. Close RustSec issues and rerun exact-head validation. Existing candidate
    locks still include web `quinn-proto 0.11.16` and `rustls 0.23.45`, and
    API `quinn-proto 0.11.16` and `rustls 0.23.43`. These versions should not
