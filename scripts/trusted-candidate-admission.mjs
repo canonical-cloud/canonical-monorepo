@@ -14,7 +14,7 @@ export function validateCandidate({ pr, reviews, commit, number, head, tree }) {
   assert.equal(pr.state, "open", "PR must be open");
   assert.equal(pr.draft, false, "draft PR cannot access private-Cargo validation");
   assert.equal(pr.base?.ref, "main", "PR base must be main");
-  assert.equal(pr.base?.repo?.full_name ?? qualifiedRepo, qualifiedRepo, "PR base repository mismatch");
+  assert.equal(pr.base?.repo?.full_name, qualifiedRepo, "PR base repository mismatch");
   assert.equal(pr.head?.repo?.full_name, qualifiedRepo, "head repository must be canonical web server");
   assert.equal(pr.head?.sha, head, "PR head has changed since approval");
   assert.ok(pr.labels?.some(l => l.name === "trusted-private-ci"),
