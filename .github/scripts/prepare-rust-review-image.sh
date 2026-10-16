@@ -17,6 +17,9 @@ RUN rustup component add rustfmt clippy
 DOCKERFILE
 then
   echo "::error::failed to prepare complete Rust review toolchain before credentials" >&2
+  # Only public Rust toolchain installation output can appear here. This script
+  # runs before and outside every step carrying private dependency credentials.
+  tail -n 50 "$RUNNER_TEMP/canonical-rust-tools-build.log" >&2
   exit 1
 fi
 id="$(docker image inspect --format '{{.Id}}' canonical-rust-reviewed:local)"
