@@ -127,10 +127,15 @@ export async function verifyFilePair(kind, manifestPath, lockPath) {
   // For this repository, only the established extracted web crates/services
   // are approved local packages; changes to this graph require review.
   for (const [pathLabel, body] of manifests) {
+    let inDependencies = false;
     for (const original of body.split(/\r?\n/)) {
       const line = original.trim();
-      if (line.startsWith("#") || !/\bpath\s*=/.test(line)) continue;
-      const match = line.match(/(?:^|[,{\s])path\s*=\s*"([^"]+)"/);
+      if (/^\[/.test(line)) {
+        inDependencies = /^\[(?:.*\.)?(?:dependencies|dev-dependencies|build-dependencies|patch\.[^]]+)\]$/.test(line);
+        continue;
+      }
+      if (!inDependencies || line.startsWith("#") || !/\bpath\s*=/.test(line)) continue;
+      const match = line.match(/^[A-Za-z0-9_-]+\s*=\s*\{[^}\n]*\bpath\s*=\s*"([^"]+)"/);
       assert.ok(match, "unreviewed Cargo path dependency syntax: " + pathLabel);
       const normalized = resolve(dirname(pathLabel), match[1]);
       const relative = [...allowedLocal].find(local => normalized === resolve(root, local));
