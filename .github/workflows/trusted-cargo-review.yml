@@ -204,7 +204,7 @@ jobs:
             exit 1
           fi
           askpass="$RUNNER_TEMP/private-cargo-review-askpass.sh"
-          install -m 0700 scripts/ci-private-cargo-askpass.sh "$askpass"
+          install -m 0700 .github/scripts/private-cargo-askpass.sh "$askpass"
           trap 'rm -f -- "$askpass"' EXIT
           export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0
           export CARGO_NET_GIT_FETCH_WITH_CLI=true
