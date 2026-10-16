@@ -27,9 +27,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     permissions:
+      actions: read
       contents: read
     outputs:
       web_sha: ${{ steps.verify.outputs.web_sha }}
+      web_pr: ${{ steps.verify.outputs.web_pr }}
+      web_tree: ${{ steps.verify.outputs.web_tree }}
     steps:
       - name: Verify immutable candidate and approved environment configuration
         id: verify
@@ -67,7 +70,8 @@ jobs:
                and (.reviewers | length) > 0
                and .prevent_self_review == true)' >/dev/null
           echo "web_sha=$WEB_SHA" >> "$GITHUB_OUTPUT"
-          echo "Authorized candidate: web PR #$WEB_PR at $WEB_SHA"
+          echo "web_pr=$WEB_PR" >> "$GITHUB_OUTPUT"
+          echo "Authorized candidate identity: web PR #$WEB_PR at $WEB_SHA"
 
       - name: Checkout exact trusted admission validator from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,14 +93,20 @@ jobs:
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           repo='canonical-cloud/canonical-web-server.rs'
           gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/candidate-pr.json"
-          gh api "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" > "$RUNNER_TEMP/candidate-reviews.json"
+          # Page 1 alone can miss a subsequent dismissal or changes-requested review.
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/candidate-reviews.json"
           gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/candidate-commit.json"
           tree="$(jq -r '.tree.sha' "$RUNNER_TEMP/candidate-commit.json")"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node scripts/trusted-candidate-admission.mjs \
             "$RUNNER_TEMP/candidate-pr.json" \
             "$RUNNER_TEMP/candidate-reviews.json" \
             "$RUNNER_TEMP/candidate-commit.json" \
             "$WEB_PR" "$WEB_SHA" "$tree"
+          # This value must be rechecked against the source checkout after
+          # human environment approval and before any private read token.
+          echo "web_tree=$tree" >> "$GITHUB_OUTPUT"
 
   trusted-cargo:
     needs: preflight
@@ -141,11 +151,13 @@ jobs:
         shell: bash
         env:
           EXPECTED_SHA: ${{ needs.preflight.outputs.web_sha }}
+          EXPECTED_TREE: ${{ needs.preflight.outputs.web_tree }}
         run: |
           set -euo pipefail
           test "$(git -C apps/canonical-web-server.rs rev-parse HEAD)" = "$EXPECTED_SHA"
           git -C apps/canonical-web-server.rs rev-parse HEAD
           git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}'
+          test "$(git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}')" = "$EXPECTED_TREE"
       - name: Install Node and pinned Rust toolchain
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -153,6 +165,25 @@ jobs:
       - name: Install Rust 1.95
         shell: bash
         run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Revalidate candidate reviews after environment approval, before private fetch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ needs.preflight.outputs.web_pr }}
+          WEB_SHA: ${{ needs.preflight.outputs.web_sha }}
+          WEB_TREE: ${{ needs.preflight.outputs.web_tree }}
+        run: |
+          set -euo pipefail
+          repo='canonical-cloud/canonical-web-server.rs'
+          gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/approved-candidate-pr.json"
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/approved-candidate-reviews.json"
+          gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/approved-candidate-commit.json"
+          node scripts/trusted-candidate-admission.mjs \
+            "$RUNNER_TEMP/approved-candidate-pr.json" \
+            "$RUNNER_TEMP/approved-candidate-reviews.json" \
+            "$RUNNER_TEMP/approved-candidate-commit.json" \
+            "$WEB_PR" "$WEB_SHA" "$WEB_TREE"
       - name: Pre-credential immutable Git source admission
         shell: bash
         run: |
