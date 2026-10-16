@@ -111,7 +111,8 @@ test("filesystem scan rejects Cargo config rewrites and symlinked candidate inpu
     const root = join(dir, "app");
     await mkdir(root);
     const f = fixture("web");
-    await writeFile(join(root, "Cargo.toml"), f.manifest);
+    const workspace = '[workspace]\\nmembers = [".", "crates/canonical-auth", "crates/canonical-config", "crates/canonical-session", "crates/canonical-store", "services/canonical-session-revoker"]\\n';
+    await writeFile(join(root, "Cargo.toml"), workspace + f.manifest);
     await writeFile(join(root, "Cargo.lock"), f.lock);
     await mkdir(join(root, "crates", "x"), { recursive: true });
     await writeFile(join(root, "crates", "x", "Cargo.toml"),
@@ -127,6 +128,27 @@ test("filesystem scan rejects Cargo config rewrites and symlinked candidate inpu
     await symlink(join(root, "Cargo.toml"), join(root, "crates", "x", "link"));
     await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
       /unreviewed symbolic link/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("reject Cargo workspace member changes into vendor and nonreviewed crates", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cargo-member-"));
+  try {
+    const root = join(dir, "app");
+    await mkdir(root);
+    const f = fixture("web");
+    await writeFile(join(root, "Cargo.toml"),
+      '[workspace]\nmembers = [".", "vendor/untrusted"]\n' + f.manifest);
+    await writeFile(join(root, "Cargo.lock"), f.lock);
+    await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
+      /web workspace member set changed/);
+    await writeFile(join(root, "Cargo.toml"),
+      '[workspace]\nmembers = [".", "crates/canonical-auth", "crates/canonical-config", "crates/canonical-session", "crates/canonical-store", "services/canonical-session-revoker"]\n' +
+      f.manifest + 'local = { path = "vendor/untrusted" }\n');
+    await assert.rejects(verifyFilePair("web", join(root, "Cargo.toml"), join(root, "Cargo.lock")),
+      /unapproved local Cargo path dependency/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
