@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const workflow = await readFile(new URL("../.github/workflows/trusted-cargo-review.yml", import.meta.url), "utf8");
+const imageScript = await readFile(new URL("../.github/scripts/prepare-rust-review-image.sh", import.meta.url), "utf8");
 const preflight = workflow.slice(workflow.indexOf("  preflight:"), workflow.indexOf("  trusted-cargo:"));
 const trusted = workflow.slice(workflow.indexOf("  trusted-cargo:"));
 const beginning = trusted.indexOf("      - name: Fetch pinned private dependencies only");
@@ -108,16 +109,24 @@ test("preflight tree is confirmed against immutable checked-out Git tree", () =>
   assert.match(trusted, /test "\$\(git -C apps\/canonical-web-server\.rs rev-parse 'HEAD\^\{tree\}'\)" = "\$EXPECTED_TREE"/);
 });
 
-test("Docker image is resolved to an immutable local ID before any credentials", () => {
-  const imageSetup = trusted.indexOf("      - name: Prepare disposable Rust image");
+test("review image toolchain is built by a pinned-local-ID helper before private credentials", () => {
+  const imageSetup = trusted.indexOf("      - name: Prepare complete disposable Rust toolchain");
   const review = trusted.indexOf("      - name: Revalidate candidate reviews");
   assert.ok(imageSetup > 0 && imageSetup < review && review < beginning);
   const prep = trusted.slice(imageSetup, review);
-  assert.match(prep, /docker pull "\$image"/);
-  assert.match(prep, /docker image inspect --format '\{\{\.Id\}\}'/);
-  assert.match(prep, /\^sha256:\[a-f0-9\]\{64\}\$/);
+  assert.match(prep, /bash \.github\/scripts\/prepare-rust-review-image\.sh/);
   assert.match(prep, /CANONICAL_PRIVATE_CARGO_CACHE/);
   assert.doesNotMatch(prep, /secrets\.|PRIVATE_CARGO_TOKEN/);
+  assert.match(imageScript, /docker pull "\$base"/);
+  assert.match(imageScript, /docker build --pull=false/);
+  assert.match(imageScript, /FROM \$\{BASE_ID\}/);
+  assert.match(imageScript, /rustup component add rustfmt clippy/);
+  assert.match(imageScript, /docker image inspect --format '\{\{\.Id\}\}'/);
+  assert.match(imageScript, /\^sha256:\[a-f0-9\]\{64\}\$/);
+  assert.match(imageScript, /docker run --rm --pull=never --network none/);
+  assert.match(imageScript, /cargo fmt --version/);
+  assert.match(imageScript, /cargo clippy --version/);
+  assert.doesNotMatch(imageScript, /PRIVATE_CARGO_TOKEN|secrets\./);
 });
 test("Cargo fetch is the only consumer of the ephemeral private dependency cache with token", () => {
   assert.match(fetchStep, /export CARGO_HOME="\$CANONICAL_PRIVATE_CARGO_CACHE"/);
