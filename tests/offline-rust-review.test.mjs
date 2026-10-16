@@ -59,6 +59,13 @@ test("launcher contains mandatory network, read-only and no-privilege controls",
   assert.doesNotMatch(content, /docker\s+--privileged|--network\s+host|--mount.*docker\.sock/);
 });
 
+test("web workspace and API all-features coverage are kept distinct", async () => {
+  const content = await readFile(launcher, "utf8");
+  assert.match(content, /-e REVIEW_APP="\$app"/);
+  assert.match(content, /cargo test --manifest-path \/src\/Cargo\.toml --workspace --all-targets --locked/);
+  assert.match(content, /cargo test --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
+  assert.match(content, /cargo clippy --manifest-path \/src\/Cargo\.toml --all-targets --all-features --locked/);
+});
 test("all reviewed operations retain hardcoded isolation and redact simulated build output", async () => {
   const f = await fixture(false);
   try {

@@ -13,7 +13,8 @@ function job(name, next) {
   return workflow.slice(beginning, ending);
 }
 const publicTest = job("test", "integration-build");
-const privateCargo = job("integration-build", "private-sidecar-contract");
+const privateCargo = job("integration-build", "isolated-stack-build");
+const separateStack = job("isolated-stack-build", "private-sidecar-contract");
 const privateSidecar = job("private-sidecar-contract");
 
 test("workflow scope contains no private credential env", () => {
@@ -34,24 +35,31 @@ test("private sidecar job runs only on main push in source repository", () => {
   assert.ok(privateSidecar.includes(mainOnly));
   assert.match(privateSidecar, /ref: \$\{\{ github\.sha \}\}/);
 });
-test("private Cargo token only exists in a fetch-only step", () => {
+test("private Cargo token only exists in fetch step, not compiled or cached on host", () => {
   assert.equal((workflow.match(/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/g) || []).length, 1);
   const at = privateCargo.indexOf("      - name: Fetch immutable private Rust dependencies");
-  const testsAt = privateCargo.indexOf("      - name: Rust web modularization contracts", at);
-  const buildAt = privateCargo.indexOf("      - name: Build the pinned public stack", testsAt);
-  assert.ok(at >= 0 && testsAt > at && buildAt > testsAt);
+  const testsAt = privateCargo.indexOf("      - name: Verify Rust lockfiles and compile without token", at);
+  assert.ok(at >= 0 && testsAt > at);
   const fetch = privateCargo.slice(at, testsAt);
   const execution = privateCargo.slice(testsAt);
   assert.match(fetch, /PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}/);
   assert.match(fetch, /GIT_ASKPASS/);
   assert.match(fetch, /trap 'rm -f -- "\$askpass"' EXIT/);
   assert.match(fetch, /CARGO_NET_GIT_FETCH_WITH_CLI=true/);
-  assert.match(fetch, /cargo fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);
-  assert.match(fetch, /cargo fetch --locked --manifest-path apps\/canonical-api-server\.rs\/Cargo\.toml/);
-  assert.match(execution, /CARGO_NET_OFFLINE: "true"/);
-  assert.match(execution, /\.\/build\.sh/);
-  assert.doesNotMatch(execution, /PRIVATE_CARGO_TOKEN|GIT_ASKPASS|secrets\./);
+  assert.match(fetch, /export CARGO_HOME="\$CANONICAL_PRIVATE_CARGO_CACHE"/);
+  assert.match(fetch, /cargo \+1\.95\.0 fetch --locked --manifest-path apps\/canonical-web-server\.rs\/Cargo\.toml/);
+  assert.match(fetch, /cargo \+1\.95\.0 fetch --locked --manifest-path apps\/canonical-api-server\.rs\/Cargo\.toml/);
+  assert.match(execution, /bash \.github\/scripts\/offline-rust-review\.sh "\$app" "\$mode"/);
+  assert.doesNotMatch(execution, /PRIVATE_CARGO_TOKEN|GIT_ASKPASS|secrets\.|\.\/build\.sh|cargo test/);
+  assert.doesNotMatch(privateCargo, /Swatinem\/rust-cache|shared-cache|run: \.\/build\.sh/);
   assert.doesNotMatch(workflow, /https:\/\/[^\s/"']+:[^\s@"']+@github\.com\//);
+});
+test("full stack runs on fresh protected-main runner without access to dependency cache", () => {
+  assert.ok(separateStack.includes(mainOnly));
+  assert.match(separateStack, /needs: integration-build/);
+  assert.match(separateStack, /run: \|[\s\S]*?\.\/build\.sh/);
+  assert.match(separateStack, /bash scripts\/stack-smoke\.sh/);
+  assert.doesNotMatch(separateStack, /secrets\.|PRIVATE_CARGO_TOKEN|CANONICAL_PRIVATE_CARGO_CACHE/);
 });
 test("missing sidecar credential fails closed only after exact pinned SHA is captured", () => {
   assert.match(privateSidecar, /- name: Require approved read-only private sidecar credential/);
