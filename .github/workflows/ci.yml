@@ -229,7 +229,7 @@ jobs:
           node-version: "22"
       - name: Build public frontend assets before private dependency access
         shell: bash
-        run: bash scripts/build-public-frontends.sh
+        run: bash .github/scripts/build-public-frontends.sh
       - name: Prepare full Rust tools and isolated private cache before credential
         shell: bash
         run: |
@@ -310,7 +310,7 @@ jobs:
         shell: bash
         env:
           GIT_TERMINAL_PROMPT: "0"
-        run: bash scripts/build-public-frontends.sh
+        run: bash .github/scripts/build-public-frontends.sh
 
   private-sidecar-contract:
     # A private checkout is allowed only for a trusted push to protected main.
