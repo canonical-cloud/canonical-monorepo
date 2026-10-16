@@ -37,6 +37,22 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
 - Public and private dependency Git URLs and immutable commits are checked
   against `scripts/check-cargo-git-sources.mjs` **before** credential usage.
   Changes to its allowlist require independent security review.
+- Private dependencies are fetched into a **dedicated ephemeral Cargo cache**.
+  Rust lock regeneration, fmt, Clippy and tests then run in a disposable
+  `rust:1.95.0-bookworm` image resolved to its local SHA256 image ID **before
+  any token is provided**. The build container has `--network none`, a
+  read-only root filesystem, capability removal, `no-new-privileges`,
+  restricted process/memory limits, read-only source and Cargo cache mounts,
+  and only disposable writable output/tmp mounts. No Docker socket or host
+  credentials are mounted. Raw build-script output is deliberately withheld
+  from public Actions logs to avoid copying private dependency source there.
+- Docker isolation shares the host kernel; it is defense in depth, not a
+  substitute for code review and separate hardened or ephemeral runners.
+  The workflow still requires independent human approval of each exact SHA.
+  Review the Rust image supply-chain provenance and use a vendor-approved
+  immutable registry digest before treating this as a production release gate.
+  An isolated Cargo test pass never authorizes a public release.
+
 
 ## Administrative checklist
 
