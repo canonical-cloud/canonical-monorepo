@@ -53,12 +53,23 @@ test("private Cargo token only exists in a fetch-only step", () => {
   assert.doesNotMatch(execution, /PRIVATE_CARGO_TOKEN|GIT_ASKPASS|secrets\./);
   assert.doesNotMatch(workflow, /https:\/\/[^\s/"']+:[^\s@"']+@github\.com\//);
 });
-test("a missing private sidecar credential fails closed on trusted main", () => {
-  assert.match(privateSidecar, /- name: Require private sidecar read access before release/);
-  assert.match(privateSidecar, /if: env\.PRIVATE_SUBMODULE_TOKEN == ''[\s\S]*?exit 1/);
+test("missing sidecar credential fails closed only after exact pinned SHA is captured", () => {
+  assert.match(privateSidecar, /- name: Require approved read-only private sidecar credential/);
+  assert.match(privateSidecar, /if \[\[ -z "\$\{PRIVATE_SUBMODULE_TOKEN:-\}" \]\]; then[\s\S]*?exit 1/);
+  assert.match(privateSidecar, /id: pinned_sidecar/);
+  assert.match(privateSidecar, /pinned_sha="\$\(git rev-parse HEAD:apps\/canonical-sidecar\.rs\)"/);
+  assert.match(privateSidecar, /echo "sha=\$pinned_sha" >> "\$GITHUB_OUTPUT"/);
 });
-test("only the private sidecar job can consume its secret", () => {
+test("sidecar token is never job-wide and checkout uses exact immutable Gitlink", () => {
   assert.equal((workflow.match(/secrets\.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN/g) || []).length, 2);
+  const firstStep = privateSidecar.indexOf("\n    steps:\n");
+  assert.ok(firstStep >= 0);
+  assert.doesNotMatch(privateSidecar.slice(0, firstStep), /PRIVATE_SUBMODULE_TOKEN|secrets\./);
+  assert.match(privateSidecar, /ref: \$\{\{ steps\.pinned_sidecar\.outputs\.sha \}\}/);
+  assert.doesNotMatch(privateSidecar, /ref: main/);
+  assert.match(privateSidecar, /PINNED_SIDECAR_SHA: \$\{\{ steps\.pinned_sidecar\.outputs\.sha \}\}/);
+  assert.match(privateSidecar, /test "\$\(git -C apps\/canonical-sidecar\.rs rev-parse HEAD\)" = "\$PINNED_SIDECAR_SHA"/);
+  assert.match(privateSidecar, /merge-base --is-ancestor "\$PINNED_SIDECAR_SHA" refs\/remotes\/origin\/main/);
   assert.doesNotMatch(publicTest, /secrets\./);
   assert.doesNotMatch(privateCargo, /CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN/);
 });
