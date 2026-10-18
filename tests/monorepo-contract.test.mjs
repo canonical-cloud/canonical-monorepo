@@ -377,11 +377,15 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     "audit-repo-state.sh",
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
-    "private-cargo-askpass.sh  for (const script of scripts) {
+    "private-cargo-askpass.sh",
+    "stack-smoke.sh",
+  ]);
+
+  for (const script of scripts) {
     const body = read(`scripts/${script}`);
     assert.doesNotMatch(body, /\bgit\s+push\b/);
     if (script === "private-cargo-askpass.sh") {
-      // The credential helper is POSIX sh, not a Bash build script.
+      // Credential helpers use POSIX sh; regular build scripts use Bash.
       assert.ok(body.startsWith("#!/bin/sh\n"));
       assert.match(body, /set -eu/);
       assert.match(body, /x-access-token@github\.com/);
