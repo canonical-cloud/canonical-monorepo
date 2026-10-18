@@ -25,6 +25,7 @@ const allowedReadOnlyReusableWorkflows = new Set([
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
+  "canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0",
 ]);
 
 const applicationPublisherSignals = [
@@ -265,6 +266,15 @@ test("application release boundary rejects known publication escape hatches", ()
     "adffdd4fe89aebdff1494195389b16a3cebc308c",
   );
   assert.deepEqual(applicationWorkflowViolations(updatedValidator), []);
+  const orgPolicy = "permissions:\n  contents: read\njobs:\n  policy:\n    uses: canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0";
+  assert.deepEqual(applicationWorkflowViolations(orgPolicy), []);
+  assert.deepEqual(
+    applicationWorkflowViolations(orgPolicy.replace(
+      "0ea46201f6a0055aa5d28c465488394d3c2c56c0",
+      "0000000000000000000000000000000000000000",
+    )),
+    ["outbound reusable workflow"],
+  );
   assert.deepEqual(
     applicationWorkflowViolations(updatedValidator.replace(
       "adffdd4fe89aebdff1494195389b16a3cebc308c",
