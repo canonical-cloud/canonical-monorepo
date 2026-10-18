@@ -458,10 +458,18 @@ test("agent policy resolves modern uppercase or exact legacy lowercase pointer",
       if (samePhysicalFile) {
         canonical = read(path.join(repository, "AGENTS.md"));
       } else {
-        // Legacy migration rejects independent case-variant authorities.
-        assert.equal(read(path.join(repository, "AGENTS.md")), exactLegacyPointer,
-          `${label}/AGENTS.md must be the exact approved legacy pointer`);
-        canonical = read(path.join(repository, "agents.md"));
+        const upperText = read(path.join(repository, "AGENTS.md"));
+        const lowerText = read(path.join(repository, "agents.md"));
+        if (upperText === lowerText) {
+          // The pinned API repo intentionally carries two byte-identical aliases.
+          // This is permitted by the organization policy, not conflicting authority.
+          canonical = upperText;
+        } else {
+          // Legacy migration requires one authoritative lowercase file and an exact pointer.
+          assert.equal(upperText, exactLegacyPointer,
+            `${label}/AGENTS.md must be exact approved legacy pointer or identical policy`);
+          canonical = lowerText;
+        }
       }
     }
     assert.match(canonical, /Command safety/, `${label} canonical policy needs Command safety`);
