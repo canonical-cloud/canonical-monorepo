@@ -93,16 +93,12 @@ jobs:
             exit 1
           fi
 
+          # The token is job-step scoped; the credential helper is ephemeral.
+          # Never place it into git config, Cargo.lock, command arguments or URLs.
           askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
-          cat >"$askpass" <<'SH'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          SH
-          chmod 700 "$askpass"
+          umask 077
+          install -m 0700 scripts/private-cargo-askpass.sh "$askpass"
+          trap 'rm -f -- "$askpass"' EXIT
 
           GIT_ASKPASS="$askpass" \
           GIT_TERMINAL_PROMPT=0 \
