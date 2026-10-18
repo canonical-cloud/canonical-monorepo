@@ -378,10 +378,10 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
     "private-cargo-askpass.sh  for (const script of scripts) {
-    const body = read(\`scripts/\${script}\`);
+    const body = read(`scripts/${script}`);
     assert.doesNotMatch(body, /\bgit\s+push\b/);
     if (script === "private-cargo-askpass.sh") {
-      // The credential helper is deliberately POSIX sh, not a Bash build script.
+      // The credential helper is POSIX sh, not a Bash build script.
       assert.ok(body.startsWith("#!/bin/sh\n"));
       assert.match(body, /set -eu/);
       assert.match(body, /x-access-token@github\.com/);
@@ -390,7 +390,6 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     }
     assert.ok(body.startsWith("#!/usr/bin/env bash\n"));
     assert.match(body, /set -euo pipefail/);
-  }tch(body, /\bgit\s+push\b/);
   }
 
   for (const script of ["audit-repo-state.sh", "checkout-feature-branch.sh", "pin-submodules.sh"]) {
