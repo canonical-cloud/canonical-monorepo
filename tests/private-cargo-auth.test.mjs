@@ -74,14 +74,14 @@ test("private Cargo askpass never responds to arbitrary hosts or prompt classes"
     assert.equal(output.stdout, "", prompt);
   }
 
-  assert.equal(run("Username for 'https://github.com':").stdout, "x-access-token\\n");
-  assert.equal(run("Password for 'https://x-access-token@github.com':").stdout, "offline-ci-token\\n");
+  assert.equal(run("Username for 'https://github.com':").stdout, "x-access-token\n");
+  assert.equal(run("Password for 'https://x-access-token@github.com':").stdout, "offline-ci-token\n");
   assert.equal(run("Password for 'https://x-access-token@github.com':", "").stdout, "");
 });
 
 test("the ephemeral Cargo credential helper is removed on step exit", async () => {
   const source = await workflow();
-  assert.match(source, /install -m 0700 scripts\\/private-cargo-askpass\\.sh "\\$askpass"/);
-  assert.match(source, /trap 'rm -f -- "\\$askpass"' EXIT/);
-  assert.doesNotMatch(source, /cat >"\\$askpass"/);
+  assert.match(source, /install -m 0700 scripts\/private-cargo-askpass\.sh "\$askpass"/);
+  assert.match(source, /trap 'rm -f -- "\$askpass"' EXIT/);
+  assert.doesNotMatch(source, /cat >"\$askpass"/);
 });
