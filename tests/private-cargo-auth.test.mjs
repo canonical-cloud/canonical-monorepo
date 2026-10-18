@@ -66,6 +66,11 @@ test("private Cargo askpass never responds to arbitrary hosts or prompt classes"
     "Password for 'http://x-access-token@github.com':",
     "Password for 'https://x-access-token@github.com.evil.example':",
     "Password for 'https://x-access-token@github.com:8443':",
+    "Password for 'https://x-access-token@github.com/repo.git",
+    "Password for 'https://x-access-token@github.com/repo.git': ignored",
+    "Password for 'https://x-access-token@github.com/repo.git':\nUnexpected",
+    "Username for 'https://github.com/repo.git",
+    "Username for 'https://github.com/repo.git': ignored",
     "Username for 'https://other.example':",
     "unknown request",
   ]) {
@@ -75,7 +80,9 @@ test("private Cargo askpass never responds to arbitrary hosts or prompt classes"
   }
 
   assert.equal(run("Username for 'https://github.com':").stdout, "x-access-token\n");
+  assert.equal(run("Username for 'https://github.com/canonical-cloud/canonical-lib-core.git':").stdout, "x-access-token\n");
   assert.equal(run("Password for 'https://x-access-token@github.com':").stdout, "offline-ci-token\n");
+  assert.equal(run("Password for 'https://x-access-token@github.com/canonical-cloud/canonical-lib-core.git':").stdout, "offline-ci-token\n");
   assert.equal(run("Password for 'https://x-access-token@github.com':", "").stdout, "");
 });
 
