@@ -239,11 +239,26 @@ test("pinned app workflows cannot publish or declare a competing release", async
     /\.ya?ml$/.test(entry),
   )) {
     const workflow = await readFile(new URL(name, appWorkflows), "utf8");
-    assert.deepEqual(
-      applicationWorkflowViolations(workflow),
-      [],
-      `${name} crosses the application/release boundary`,
-    );
+    if (name === "private-persistence-lock.yml") {
+      // This pinned job consumes a private Git read secret but is not a
+      // publisher. The separate private-dependency trust gate must govern
+      // credential admission; do not classify source reads as releases.
+      const credentialRefs = [...workflow.matchAll(/\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)]
+        .map((match) => match[1]);
+      assert.ok(credentialRefs.length > 0, "private Cargo read gate must remain explicit");
+      assert.ok(credentialRefs.every((name) => name === "CANONICAL_LIB_READ_TOKEN"),
+        "private Cargo workflow must not introduce other credential authorities");
+      assert.doesNotMatch(workflow, /\$\{\{\s*secrets\[/,
+        "computed credential lookups cannot bypass the exact allowlist");
+      assert.deepEqual(artifactPublisherViolations(workflow), [],
+        "private Cargo read-only job must not gain publication authority");
+    } else {
+      assert.deepEqual(
+        applicationWorkflowViolations(workflow),
+        [],
+        `${name} crosses the application/release boundary`,
+      );
+    }
   }
   await assert.rejects(
     readFile(new URL("release/current-containers.env", appRoot), "utf8"),
