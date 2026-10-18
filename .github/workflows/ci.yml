@@ -12,9 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -122,14 +119,27 @@ jobs:
           submodules: false
           fetch-depth: 1
           persist-credentials: false
+      # PR-controlled code cannot receive this private sidecar credential.
+      # The gate also reports absence, never the credential itself.
+      - name: Probe trusted private sidecar credential availability
+        id: sidecar-auth
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
+        run: |
+          if [ -n "${PRIVATE_SUBMODULE_TOKEN:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Explain credential boundary when private read access is unavailable
-        if: env.PRIVATE_SUBMODULE_TOKEN == ''
+        if: steps.sidecar-auth.outputs.available != 'true'
         run: >-
-          echo 'Private sidecar source was not fetched. Configure the repository secret
-          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN with read-only access to
-          canonical-cloud/canonical-sidecar.rs to enable private pin verification.'
+          echo 'Private sidecar source was not fetched. Private-source checkout is limited
+          to trusted protected-main pushes with the configured read-only
+          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN secret; PR checks are not private-source evidence.'
       - name: Check out private sidecar with repository-scoped read secret
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        if: steps.sidecar-auth.outputs.available == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: canonical-cloud/canonical-sidecar.rs
@@ -139,7 +149,7 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
       - name: Verify pinned private sidecar is reachable from main
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        if: steps.sidecar-auth.outputs.available == 'true'
         run: |
           set -euo pipefail
           pinned_sha="$(git rev-parse HEAD:apps/canonical-sidecar.rs)"
