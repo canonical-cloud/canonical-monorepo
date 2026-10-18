@@ -50,3 +50,38 @@ test("missing private Cargo auth fails as an explicit admission boundary", async
   );
   assert.match(source, /exit 1/);
 });
+
+test("private Cargo askpass never responds to arbitrary hosts or prompt classes", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const script = fileURLToPath(new URL("../scripts/private-cargo-askpass.sh", import.meta.url));
+  const run = (prompt, token = "offline-ci-token") => spawnSync("sh", [script, prompt], {
+    env: { PRIVATE_CARGO_TOKEN: token },
+    encoding: "utf8",
+  });
+
+  for (const prompt of [
+    "Password for 'https://evil.example':",
+    "Password for 'https://github.com.evil.example':",
+    "Password for 'http://x-access-token@github.com':",
+    "Password for 'https://x-access-token@github.com.evil.example':",
+    "Password for 'https://x-access-token@github.com:8443':",
+    "Username for 'https://other.example':",
+    "unknown request",
+  ]) {
+    const output = run(prompt);
+    assert.notEqual(output.status, 0, prompt);
+    assert.equal(output.stdout, "", prompt);
+  }
+
+  assert.equal(run("Username for 'https://github.com':").stdout, "x-access-token\\n");
+  assert.equal(run("Password for 'https://x-access-token@github.com':").stdout, "offline-ci-token\\n");
+  assert.equal(run("Password for 'https://x-access-token@github.com':", "").stdout, "");
+});
+
+test("the ephemeral Cargo credential helper is removed on step exit", async () => {
+  const source = await workflow();
+  assert.match(source, /install -m 0700 scripts\\/private-cargo-askpass\\.sh "\\$askpass"/);
+  assert.match(source, /trap 'rm -f -- "\\$askpass"' EXIT/);
+  assert.doesNotMatch(source, /cat >"\\$askpass"/);
+});
