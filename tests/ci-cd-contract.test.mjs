@@ -23,6 +23,7 @@ const boundaryDocs = await readFile(
 );
 const allowedReadOnlyReusableWorkflows = new Set([
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
 ]);
 
@@ -256,6 +257,20 @@ test("application release boundary rejects known publication escape hatches", ()
     applicationWorkflowViolations(safeValidationWorkflow),
     [],
     "immutable read-only hierarchy validation must not be treated as publishing",
+  );
+  // The pinned app gitlink f5d6c3f calls a newer, independently inspected
+  // immutable read-only validator. Any different revision remains denied.
+  const updatedValidator = safeValidationWorkflow.replace(
+    "202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+    "adffdd4fe89aebdff1494195389b16a3cebc308c",
+  );
+  assert.deepEqual(applicationWorkflowViolations(updatedValidator), []);
+  assert.deepEqual(
+    applicationWorkflowViolations(updatedValidator.replace(
+      "adffdd4fe89aebdff1494195389b16a3cebc308c",
+      "0000000000000000000000000000000000000000",
+    )),
+    ["outbound reusable workflow"],
   );
 
   const fixtures = [
