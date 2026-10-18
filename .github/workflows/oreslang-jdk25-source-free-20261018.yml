@@ -1,0 +1,47 @@
+name: Oreslang JDK25 source-free runner verification
+on:
+  push:
+    branches: [ci/oreslang-source-free-jdk25-20261018]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-jdk25-and-synthetic-tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Runner assignment
+        run: |
+          set -euo pipefail
+          echo "Runner OS: $RUNNER_OS"
+          test "$RUNNER_OS" = Linux
+      - name: Install JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Check JDK25 and Maven executables
+        run: |
+          set -euo pipefail
+          javac -version
+          test "$(javac -version 2>&1 | awk '{print $2}' | cut -d. -f1)" = "25"
+          mvn -version
+      - name: Synthetic-only full-tree and tamper oracle
+        run: |
+          set -euo pipefail
+          a="$(mktemp -d)"
+          b="$(mktemp -d)"
+          trap 'rm -rf "$a" "$b"' EXIT
+          for dir in "$a" "$b"; do
+            git -C "$dir" init -q
+            mkdir -p "$dir/src"
+            printf 'synthetic only\n' > "$dir/src/a.txt"
+            git -C "$dir" add .
+          done
+          initial="$(git -C "$a" write-tree)"
+          test "$initial" = "$(git -C "$b" write-tree)"
+          printf 'tampered\n' > "$b/src/a.txt"
+          git -C "$b" add .
+          test "$initial" != "$(git -C "$b" write-tree)"
+          echo "source-free synthetic tree oracle passed"
