@@ -92,3 +92,25 @@ test("the ephemeral Cargo credential helper is removed on step exit", async () =
   assert.match(source, /trap 'rm -f -- "\$askpass"' EXIT/);
   assert.doesNotMatch(source, /cat >"\$askpass"/);
 });
+
+test("sidecar credentials stay out of global CI environment and PR checkout", async () => {
+  const source = await workflow();
+  const globalHeader = source.split("\njobs:\n")[0];
+  assert.doesNotMatch(globalHeader, /PRIVATE_SUBMODULE_TOKEN/);
+  assert.match(
+    source,
+    /id: sidecar-auth\n\s+if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/,
+    "private read probe must be restricted to trusted main pushes",
+  );
+  assert.equal(
+    (source.match(/PRIVATE_SUBMODULE_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN \}\}/g) ?? []).length,
+    1,
+    "sidecar token may only appear in the trusted availability probe environment",
+  );
+  assert.equal(
+    (source.match(/if: steps\.sidecar-auth\.outputs\.available == 'true'/g) ?? []).length,
+    2,
+    "private checkout and pin verification must both require the trusted probe",
+  );
+  assert.doesNotMatch(source, /if: env\.PRIVATE_SUBMODULE_TOKEN/);
+});
