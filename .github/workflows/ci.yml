@@ -12,9 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -46,7 +43,11 @@ jobs:
       - name: Audit public stack and private-submodule metadata
         run: bash scripts/audit-repo-state.sh --allow-uninitialized-private
 
+  # The public PR gate runs in 'test'. Private Rust dependencies require
+  # trusted protected-main code and a repository-scoped read-only secret.
+  # Never hand a Cargo token to PR-controlled checkout/build scripts.
   integration-build:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -78,40 +79,34 @@ jobs:
           workspaces: |
             apps/canonical-web-server.rs
             apps/canonical-api-server.rs
-      - name: Rust web modularization contracts
-        run: >-
-          cargo test --locked
-          --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          --workspace --all-targets
-      - name: Rust API contracts
+      # The web workspace also depends on canonical-lib-core. Authenticate
+      # BEFORE its first Cargo invocation, not only before API tests.
+      - name: Authenticated Rust web, API and pinned-stack build
         env:
           PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${PRIVATE_CARGO_TOKEN:-}" ]; then
-            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
+            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; Rust integration was not executed.'
             exit 1
           fi
 
+          # Credentials exist only for this trusted-main build step.
           askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
-          cat >"$askpass" <<'SH'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
-            *) exit 1 ;;
-          esac
-          SH
-          chmod 700 "$askpass"
+          umask 077
+          install -m 0700 scripts/private-cargo-askpass.sh "$askpass"
+          trap 'rm -f -- "$askpass"' EXIT
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+          export CARGO_NET_GIT_FETCH_WITH_CLI=true
 
-          GIT_ASKPASS="$askpass" \
-          GIT_TERMINAL_PROMPT=0 \
-          CARGO_NET_GIT_FETCH_WITH_CLI=true \
-            cargo test --locked \
-              --manifest-path apps/canonical-api-server.rs/Cargo.toml \
-              --all-targets --all-features
-      - name: Build the pinned public stack
-        run: ./build.sh
+          cargo test --locked \
+            --manifest-path apps/canonical-web-server.rs/Cargo.toml \
+            --workspace --all-targets
+          cargo test --locked \
+            --manifest-path apps/canonical-api-server.rs/Cargo.toml \
+            --all-targets --all-features
+          ./build.sh
       - name: Stack smoke (runtime contracts vs pinned interfaces)
         run: bash scripts/stack-smoke.sh
 
@@ -126,14 +121,27 @@ jobs:
           submodules: false
           fetch-depth: 1
           persist-credentials: false
+      # PR-controlled code cannot receive this private sidecar credential.
+      # The gate also reports absence, never the credential itself.
+      - name: Probe trusted private sidecar credential availability
+        id: sidecar-auth
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          PRIVATE_SUBMODULE_TOKEN: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
+        run: |
+          if [ -n "${PRIVATE_SUBMODULE_TOKEN:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
       - name: Explain credential boundary when private read access is unavailable
-        if: env.PRIVATE_SUBMODULE_TOKEN == ''
+        if: steps.sidecar-auth.outputs.available != 'true'
         run: >-
-          echo 'Private sidecar source was not fetched. Configure the repository secret
-          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN with read-only access to
-          canonical-cloud/canonical-sidecar.rs to enable private pin verification.'
+          echo 'Private sidecar source was not fetched. Private-source checkout is limited
+          to trusted protected-main pushes with the configured read-only
+          CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN secret; PR checks are not private-source evidence.'
       - name: Check out private sidecar with repository-scoped read secret
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        if: steps.sidecar-auth.outputs.available == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: canonical-cloud/canonical-sidecar.rs
@@ -143,7 +151,7 @@ jobs:
           persist-credentials: false
           token: ${{ secrets.CANONICAL_PRIVATE_SUBMODULES_READ_TOKEN }}
       - name: Verify pinned private sidecar is reachable from main
-        if: env.PRIVATE_SUBMODULE_TOKEN != ''
+        if: steps.sidecar-auth.outputs.available == 'true'
         run: |
           set -euo pipefail
           pinned_sha="$(git rev-parse HEAD:apps/canonical-sidecar.rs)"

@@ -23,7 +23,9 @@ const boundaryDocs = await readFile(
 );
 const allowedReadOnlyReusableWorkflows = new Set([
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
+  "canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0",
 ]);
 
 const applicationPublisherSignals = [
@@ -237,11 +239,26 @@ test("pinned app workflows cannot publish or declare a competing release", async
     /\.ya?ml$/.test(entry),
   )) {
     const workflow = await readFile(new URL(name, appWorkflows), "utf8");
-    assert.deepEqual(
-      applicationWorkflowViolations(workflow),
-      [],
-      `${name} crosses the application/release boundary`,
-    );
+    if (name === "private-persistence-lock.yml") {
+      // This pinned job consumes a private Git read secret but is not a
+      // publisher. The separate private-dependency trust gate must govern
+      // credential admission; do not classify source reads as releases.
+      const credentialRefs = [...workflow.matchAll(/\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g)]
+        .map((match) => match[1]);
+      assert.ok(credentialRefs.length > 0, "private Cargo read gate must remain explicit");
+      assert.ok(credentialRefs.every((name) => name === "CANONICAL_LIB_READ_TOKEN"),
+        "private Cargo workflow must not introduce other credential authorities");
+      assert.doesNotMatch(workflow, /\$\{\{\s*secrets\[/,
+        "computed credential lookups cannot bypass the exact allowlist");
+      assert.deepEqual(artifactPublisherViolations(workflow), [],
+        "private Cargo read-only job must not gain publication authority");
+    } else {
+      assert.deepEqual(
+        applicationWorkflowViolations(workflow),
+        [],
+        `${name} crosses the application/release boundary`,
+      );
+    }
   }
   await assert.rejects(
     readFile(new URL("release/current-containers.env", appRoot), "utf8"),
@@ -256,6 +273,29 @@ test("application release boundary rejects known publication escape hatches", ()
     applicationWorkflowViolations(safeValidationWorkflow),
     [],
     "immutable read-only hierarchy validation must not be treated as publishing",
+  );
+  // The pinned app gitlink f5d6c3f calls a newer, independently inspected
+  // immutable read-only validator. Any different revision remains denied.
+  const updatedValidator = safeValidationWorkflow.replace(
+    "202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+    "adffdd4fe89aebdff1494195389b16a3cebc308c",
+  );
+  assert.deepEqual(applicationWorkflowViolations(updatedValidator), []);
+  const orgPolicy = "permissions:\n  contents: read\njobs:\n  policy:\n    uses: canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0";
+  assert.deepEqual(applicationWorkflowViolations(orgPolicy), []);
+  assert.deepEqual(
+    applicationWorkflowViolations(orgPolicy.replace(
+      "0ea46201f6a0055aa5d28c465488394d3c2c56c0",
+      "0000000000000000000000000000000000000000",
+    )),
+    ["outbound reusable workflow"],
+  );
+  assert.deepEqual(
+    applicationWorkflowViolations(updatedValidator.replace(
+      "adffdd4fe89aebdff1494195389b16a3cebc308c",
+      "0000000000000000000000000000000000000000",
+    )),
+    ["outbound reusable workflow"],
   );
 
   const fixtures = [
