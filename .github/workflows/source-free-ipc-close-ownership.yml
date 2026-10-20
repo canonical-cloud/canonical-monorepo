@@ -1,0 +1,33 @@
+name: Source-free IPC physical close ownership oracle
+on:
+  push:
+    branches:
+      - ci/source-free-ipc-close-ownership-20261019
+
+permissions:
+  contents: read
+
+jobs:
+  close-ownership:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        java: ['17', '21', '25']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Confirm source-free scope
+        run: |
+          test -f ci/source-free-ipc-close-ownership/PhysicalCloseOwnershipOracle.java
+          test ! -d src/main/java/dev/oreslang/runtime || exit 1
+      - name: Compile independent close ownership oracle
+        run: javac -Xlint:all -Werror ci/source-free-ipc-close-ownership/PhysicalCloseOwnershipOracle.java
+      - name: Prove exactly-one physical descriptor close
+        run: java -cp ci/source-free-ipc-close-ownership PhysicalCloseOwnershipOracle
