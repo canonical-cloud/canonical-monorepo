@@ -19,8 +19,8 @@ test("private Cargo auth is step-scoped and uses askpass instead of credential U
   );
   assert.match(
     source,
-    /- name: Rust API contracts[\s\S]*?PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}[\s\S]*?GIT_ASKPASS=/,
-    "private Cargo token must be scoped to the API contract step and consumed through GIT_ASKPASS",
+    /- name: Authenticated Rust web, API and pinned-stack build[\s\S]*?PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}[\s\S]*?GIT_ASKPASS=/,
+    "private Cargo token must be scoped to the trusted main Rust integration step and consumed through GIT_ASKPASS",
   );
   assert.match(source, /CARGO_NET_GIT_FETCH_WITH_CLI=true/);
   assert.match(source, /GIT_TERMINAL_PROMPT=0/);
@@ -39,6 +39,28 @@ test("private Cargo auth is step-scoped and uses askpass instead of credential U
     /git\s+config[^\n]*(?:extraheader|credential\.helper)[^\n]*PRIVATE_CARGO_TOKEN/i,
     "workflow must not persist the private Cargo token in git configuration",
   );
+});
+
+test("private Rust gate is trusted-main-only and covers all Cargo consumers", async () => {
+  const source = await workflow();
+  const integration = source.split("\n  integration-build:\n")[1]?.split("\n  private-sidecar-contract:\n")[0];
+  assert.ok(integration, "private integration job must exist");
+  assert.match(integration, /^    if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'$/m);
+  assert.match(integration, /^    needs: test$/m);
+  assert.equal(
+    (integration.match(/PRIVATE_CARGO_TOKEN: \$\{\{ secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN \}\}/g) ?? []).length,
+    1,
+    "read token must be scoped to one trusted build step",
+  );
+  const auth = integration.indexOf('export GIT_ASKPASS="$askpass"');
+  const web = integration.indexOf("apps/canonical-web-server.rs/Cargo.toml");
+  const api = integration.indexOf("apps/canonical-api-server.rs/Cargo.toml");
+  const build = integration.indexOf("./build.sh");
+  assert.ok(auth >= 0 && web > auth && api > web && build > api,
+    "web, API and stack build must all occur after authenticated admission");
+  assert.doesNotMatch(integration.split("      - name: Stack smoke")[1] ?? "",
+    /PRIVATE_CARGO_TOKEN|GIT_ASKPASS/,
+    "smoke step must not inherit private authentication");
 });
 
 test("missing private Cargo auth fails as an explicit admission boundary", async () => {
