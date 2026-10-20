@@ -85,20 +85,20 @@ jobs:
           --workspace --all-targets
       - name: Rust API contracts
         env:
-          PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
+          CANONICAL_LIB_READ_TOKEN: ${{ secrets.CANONICAL_LIB_READ_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${PRIVATE_CARGO_TOKEN:-}" ]; then
-            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_PRIVATE_CARGO_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
+          if [ -z "${CANONICAL_LIB_READ_TOKEN:-}" ]; then
+            echo '::error::Private Cargo dependency admission is unavailable. Configure CANONICAL_LIB_READ_TOKEN with read-only access to canonical-cloud/canonical-lib-core; API Rust tests were not started.'
             exit 1
           fi
 
-          askpass="$RUNNER_TEMP/canonical-private-cargo-askpass.sh"
+          askpass="$RUNNER_TEMP/canonical-lib-read-askpass.sh"
           cat >"$askpass" <<'SH'
           #!/bin/sh
           case "$1" in
             *Username*) printf '%s\n' 'x-access-token' ;;
-            *Password*) printf '%s\n' "$PRIVATE_CARGO_TOKEN" ;;
+            *Password*) printf '%s\n' "$CANONICAL_LIB_READ_TOKEN" ;;
             *) exit 1 ;;
           esac
           SH
