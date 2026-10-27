@@ -7,10 +7,12 @@ on:
     paths:
       - '.github/workflows/oreslang-async-io-source-free.yml'
       - 'ci/async-io-source-free-policy.test.mjs'
+      - 'ci/NioSingleCarrierCanary.java'
   pull_request:
     paths:
       - '.github/workflows/oreslang-async-io-source-free.yml'
       - 'ci/async-io-source-free-policy.test.mjs'
+      - 'ci/NioSingleCarrierCanary.java'
 
 permissions:
   contents: read
@@ -28,3 +30,7 @@ jobs:
         run: node --version
       - name: Run source-free async I/O policy suite
         run: node --test ci/async-io-source-free-policy.test.mjs
+      - name: Compile source-free JDK NIO one-carrier canary
+        run: javac --release 21 -Xlint:all -Werror -d /tmp/ores-nio-canary ci/NioSingleCarrierCanary.java
+      - name: Run source-free JDK NIO one-carrier canary
+        run: java -cp /tmp/ores-nio-canary NioSingleCarrierCanary
