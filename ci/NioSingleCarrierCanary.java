@@ -66,12 +66,21 @@ public final class NioSingleCarrierCanary {
             check(registered.await(2, TimeUnit.SECONDS), "read watch registration timed out");
         }
 
-        @Override public void close() throws Exception {
+        @Override public void close() {
             closed.set(true);
             selector.wakeup();
-            thread.join(3000);
+            try {
+                thread.join(3000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("interrupted while stopping reactor", interrupted);
+            }
             check(!thread.isAlive(), "reactor did not terminate");
-            selector.close();
+            try {
+                selector.close();
+            } catch (java.io.IOException failure) {
+                throw new AssertionError("selector close failed", failure);
+            }
         }
     }
 
