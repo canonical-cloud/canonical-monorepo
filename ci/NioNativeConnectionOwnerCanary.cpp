@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fcntl.h>
+#include <iostream>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -180,5 +181,6 @@ int main() {
     }
     ::close(pair2[1]);
 
+    std::cout << "SOURCE_FREE_NATIVE_CONNECTION_OWNER_PASS\n";
     return 0;
 }
