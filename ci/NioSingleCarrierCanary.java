@@ -99,10 +99,10 @@ public final class NioSingleCarrierCanary {
                 if (accepted == null) Thread.onSpinWait();
             }
             check(accepted != null, "loopback accept timed out");
-            try (accepted) {
-                accepted.configureBlocking(false);
+            try (SocketChannel channel = accepted) {
+                channel.configureBlocking(false);
                 CountDownLatch ready = new CountDownLatch(1);
-                reactor.watchRead(accepted, () -> completion.execute(ready::countDown));
+                reactor.watchRead(channel, () -> completion.execute(ready::countDown));
 
                 // The peer is deliberately silent. If readiness were implemented
                 // by parking the only completion carrier, this unrelated task
@@ -117,7 +117,7 @@ public final class NioSingleCarrierCanary {
                 check(ready.await(2, TimeUnit.SECONDS), "readiness completion timed out");
 
                 ByteBuffer one = ByteBuffer.allocate(1);
-                int n = accepted.read(one);
+                int n = channel.read(one);
                 check(n == 1 && (one.array()[0] & 0xff) == 0x5a,
                         "readiness did not preserve the byte");
             }
