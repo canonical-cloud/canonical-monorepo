@@ -9,6 +9,7 @@ on:
       - 'ci/async-io-source-free-policy.test.mjs'
       - 'ci/NioSingleCarrierCanary.java'
       - 'ci/NioOutboundConnectCanary.java'
+      - 'ci/NioDuplexSelectorCanary.java'
       - 'ci/NioLinuxConnectWritableCanary.cpp'
   pull_request:
     paths:
@@ -46,6 +47,10 @@ jobs:
         run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-connect ci/NioOutboundConnectCanary.java
       - name: Run source-free JDK NIO outbound-connect canary
         run: java -cp /tmp/ores-nio-connect NioOutboundConnectCanary
+      - name: Compile source-free JDK NIO duplex selector canary
+        run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-duplex ci/NioDuplexSelectorCanary.java
+      - name: Run source-free JDK NIO duplex selector canary
+        run: java -cp /tmp/ores-nio-duplex NioDuplexSelectorCanary
       - name: Compile source-free Linux epoll connect/writable canary
         run: g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -UNDEBUG ci/NioLinuxConnectWritableCanary.cpp -o /tmp/ores-linux-nio-canary
       - name: Run source-free Linux epoll connect/writable canary
