@@ -60,36 +60,45 @@ public final class NioDuplexSelectorCanary {
                     check((first & SelectionKey.OP_READ) == 0,
                             "silent peer unexpectedly produced OP_READ");
 
-                    // Retire only the writable sub-watch. The read interest must
-                    // remain armed on the same physical key.
-                    key.interestOps(SelectionKey.OP_READ);
-                    check(selector.selectNow() == 0,
-                            "retired OP_WRITE produced stale readiness");
+                    for (int cycle = 0; cycle < 128; ++cycle) {
+                        // Retire only the writable sub-watch. The read interest
+                        // must remain armed on the same physical key.
+                        key.interestOps(SelectionKey.OP_READ);
+                        check(selector.selectNow() == 0,
+                                "retired OP_WRITE produced stale readiness");
 
-                    peer.write(ByteBuffer.wrap(new byte[] {(byte) 0x5a}));
-                    n = selector.select(3000);
-                    check(n == 1, "remaining OP_READ did not wake");
-                    selected = selector.selectedKeys().iterator();
-                    ready = selected.next();
-                    selected.remove();
-                    check((ready.readyOps() & SelectionKey.OP_READ) != 0,
-                            "missing OP_READ after peer data");
+                        byte expected = (byte)(0x20 + (cycle & 0x3f));
+                        peer.write(ByteBuffer.wrap(new byte[] {expected}));
+                        n = selector.select(3000);
+                        check(n == 1, "remaining OP_READ did not wake");
+                        selected = selector.selectedKeys().iterator();
+                        ready = selected.next();
+                        selected.remove();
+                        check((ready.readyOps() & SelectionKey.OP_READ) != 0,
+                                "missing OP_READ after peer data");
 
-                    ByteBuffer one = ByteBuffer.allocate(1);
-                    check(client.read(one) == 1, "client did not consume peer byte");
-                    check(one.array()[0] == (byte) 0x5a, "peer byte changed");
+                        ByteBuffer one = ByteBuffer.allocate(1);
+                        check(client.read(one) == 1,
+                                "client did not consume peer byte");
+                        check(one.array()[0] == expected, "peer byte changed");
 
-                    // Retire read and re-arm the same key for write. This
-                    // models cancellation/completion of one direction followed
-                    // by fresh same-FD ownership.
-                    key.interestOps(SelectionKey.OP_WRITE);
-                    n = selector.select(3000);
-                    check(n == 1, "same key did not re-arm OP_WRITE");
-                    selected = selector.selectedKeys().iterator();
-                    ready = selected.next();
-                    selected.remove();
-                    check((ready.readyOps() & SelectionKey.OP_WRITE) != 0,
-                            "re-armed key missing OP_WRITE");
+                        // Retire read and re-arm the same key for write. This
+                        // models cancellation/completion of one direction
+                        // followed by fresh same-FD ownership.
+                        key.interestOps(SelectionKey.OP_WRITE);
+                        n = selector.select(3000);
+                        check(n == 1, "same key did not re-arm OP_WRITE");
+                        selected = selector.selectedKeys().iterator();
+                        ready = selected.next();
+                        selected.remove();
+                        check((ready.readyOps() & SelectionKey.OP_WRITE) != 0,
+                                "re-armed key missing OP_WRITE");
+
+                        // Re-admit the disjoint pair for the next cycle.
+                        if (cycle + 1 < 128)
+                            key.interestOps(
+                                    SelectionKey.OP_READ | SelectionKey.OP_WRITE);
+                    }
                     key.cancel();
                 }
             }
