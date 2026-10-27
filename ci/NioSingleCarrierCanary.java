@@ -26,7 +26,7 @@ public final class NioSingleCarrierCanary {
 
         Reactor() throws Exception {
             selector = Selector.open();
-            thread = Thread.ofPlatform().daemon(true).name("source-free-nio-reactor").start(() -> {
+            thread = new Thread(() -> {
                 try {
                     while (!closed.get()) {
                         Runnable command;
@@ -46,7 +46,9 @@ public final class NioSingleCarrierCanary {
                     failure.printStackTrace(System.err);
                     System.exit(91);
                 }
-            });
+            }, "source-free-nio-reactor");
+            thread.setDaemon(true);
+            thread.start();
         }
 
         void watchRead(SocketChannel channel, Runnable ready) throws Exception {
@@ -74,9 +76,11 @@ public final class NioSingleCarrierCanary {
     }
 
     public static void main(String[] args) throws Exception {
-        ExecutorService completion = Executors.newSingleThreadExecutor(
-                runnable -> Thread.ofPlatform().daemon(true)
-                        .name("source-free-single-completion-carrier").unstarted(runnable));
+        ExecutorService completion = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "source-free-single-completion-carrier");
+            thread.setDaemon(true);
+            return thread;
+        });
         try (Reactor reactor = new Reactor();
              ServerSocketChannel listener = ServerSocketChannel.open();
              Socket peer = new Socket()) {
