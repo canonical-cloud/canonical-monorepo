@@ -8,11 +8,13 @@ on:
       - '.github/workflows/oreslang-async-io-source-free.yml'
       - 'ci/async-io-source-free-policy.test.mjs'
       - 'ci/NioSingleCarrierCanary.java'
+      - 'ci/NioOutboundConnectCanary.java'
   pull_request:
     paths:
       - '.github/workflows/oreslang-async-io-source-free.yml'
       - 'ci/async-io-source-free-policy.test.mjs'
       - 'ci/NioSingleCarrierCanary.java'
+      - 'ci/NioOutboundConnectCanary.java'
 
 permissions:
   contents: read
@@ -38,3 +40,7 @@ jobs:
         run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-canary ci/NioSingleCarrierCanary.java
       - name: Run source-free JDK NIO one-carrier canary
         run: java -cp /tmp/ores-nio-canary NioSingleCarrierCanary
+      - name: Compile source-free JDK NIO outbound-connect canary
+        run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-connect ci/NioOutboundConnectCanary.java
+      - name: Run source-free JDK NIO outbound-connect canary
+        run: java -cp /tmp/ores-nio-connect NioOutboundConnectCanary
