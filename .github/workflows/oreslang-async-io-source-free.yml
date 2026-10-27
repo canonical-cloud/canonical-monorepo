@@ -26,8 +26,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      - name: Show runtime
-        run: node --version
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Show runtimes
+        run: |
+          node --version
+          java -version
+          javac -version
       - name: Run source-free async I/O policy suite
         run: node --test ci/async-io-source-free-policy.test.mjs
       - name: Compile source-free JDK NIO one-carrier canary
