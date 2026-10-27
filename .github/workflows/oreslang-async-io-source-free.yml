@@ -1,0 +1,62 @@
+name: Oreslang async I/O source-free canary
+
+on:
+  push:
+    branches:
+      - 'ci/oreslang-async-io-*'
+    paths:
+      - '.github/workflows/oreslang-async-io-source-free.yml'
+      - 'ci/async-io-source-free-policy.test.mjs'
+      - 'ci/NioSingleCarrierCanary.java'
+      - 'ci/NioOutboundConnectCanary.java'
+      - 'ci/NioDuplexSelectorCanary.java'
+      - 'ci/NioLinuxConnectWritableCanary.cpp'
+      - 'ci/NioNativeConnectionOwnerCanary.cpp'
+  pull_request:
+    paths:
+      - '.github/workflows/oreslang-async-io-source-free.yml'
+      - 'ci/async-io-source-free-policy.test.mjs'
+      - 'ci/NioSingleCarrierCanary.java'
+      - 'ci/NioOutboundConnectCanary.java'
+      - 'ci/NioLinuxConnectWritableCanary.cpp'
+
+permissions:
+  contents: read
+
+jobs:
+  source-free-async-io:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Show runtimes
+        run: |
+          node --version
+          java -version
+          javac -version
+      - name: Run source-free async I/O policy suite
+        run: node --test ci/async-io-source-free-policy.test.mjs
+      - name: Compile source-free JDK NIO one-carrier canary
+        run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-canary ci/NioSingleCarrierCanary.java
+      - name: Run source-free JDK NIO one-carrier canary
+        run: java -cp /tmp/ores-nio-canary NioSingleCarrierCanary
+      - name: Compile source-free JDK NIO outbound-connect canary
+        run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-connect ci/NioOutboundConnectCanary.java
+      - name: Run source-free JDK NIO outbound-connect canary
+        run: java -cp /tmp/ores-nio-connect NioOutboundConnectCanary
+      - name: Compile source-free JDK NIO duplex selector canary
+        run: javac --release 17 -Xlint:all -Werror -d /tmp/ores-nio-duplex ci/NioDuplexSelectorCanary.java
+      - name: Run source-free JDK NIO duplex selector canary
+        run: java -cp /tmp/ores-nio-duplex NioDuplexSelectorCanary
+      - name: Compile source-free Linux epoll connect/writable canary
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -UNDEBUG ci/NioLinuxConnectWritableCanary.cpp -o /tmp/ores-linux-nio-canary
+      - name: Run source-free Linux epoll connect/writable canary
+        run: /tmp/ores-linux-nio-canary
+      - name: Compile source-free native connection owner canary
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic -Werror -UNDEBUG ci/NioNativeConnectionOwnerCanary.cpp -o /tmp/ores-native-connection-owner-canary
+      - name: Run source-free native connection owner canary
+        run: /tmp/ores-native-connection-owner-canary
