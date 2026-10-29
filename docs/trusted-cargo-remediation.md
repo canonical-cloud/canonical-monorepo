@@ -6,7 +6,7 @@ Require a non-draft exact-head same-repo web PR, label trusted-lock-remediation,
 
 The canonical-private-cargo-remediation environment requires protected branches, required independent reviewers, and prevention of self-review. Its read-only CANONICAL_PRIVATE_CARGO_READ_TOKEN must be scoped to the pinned canonical-lib-core and canonical-orm-core sources. This environment is distinct from canonical-private-cargo-validation.
 
-Only cargo fetch --locked receives credentials. The exact reviewed source and tree are checked twice, and trusted main admission rules reject unapproved Git sources. The Cargo resolver runs without network, tokens, source write access or a Docker socket. No candidate-owned scripts or build scripts are executed.
+Fixed, public patched crates are prefetched into the disposable registry cache before private source is introduced. Only cargo fetch --locked receives credentials. The exact reviewed source and tree are checked twice, and trusted main admission rules reject unapproved Git sources. The Cargo resolver runs without network, tokens, source write access or a Docker socket. No candidate-owned scripts or build scripts are executed.
 
 The sole artifact is a proposed Cargo.lock. A human must review and commit genuine Cargo-resolved checksums into the source PR and run the full RustSec audit and all compilation/integration gates. A green remediation artifact is NOT a merge, compiler, audit or release verdict.
 

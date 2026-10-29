@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Only trusted monorepo/main invokes this; no network, credentials or source scripts.
 set -euo pipefail
+# Defend against accidentally invoking the resolver from a credentialed step.
+if [[ -n "${PRIVATE_CARGO_TOKEN:-}" || -n "${GIT_ASKPASS:-}" ]]; then
+  echo '::error::Offline resolver refuses private credentials or Git askpass' >&2
+  exit 1
+fi
 : "$GITHUB_WORKSPACE" "$RUNNER_TEMP" "$CANONICAL_RUST_IMAGE_ID" "$CANONICAL_PRIVATE_CARGO_CACHE"
 [[ "$CANONICAL_RUST_IMAGE_ID" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
 [[ "$CANONICAL_PRIVATE_CARGO_CACHE" == "$RUNNER_TEMP/"* ]] || exit 1

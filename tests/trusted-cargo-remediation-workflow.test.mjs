@@ -58,7 +58,10 @@ test("the resolution container cannot access the network or host secrets",()=>{
   assert.match(resolver,/--read-only/);
   assert.match(resolver,/CARGO_NET_OFFLINE=true/);
   assert.match(resolver,/source=\$src,target=\/source,readonly/);
-  assert.doesNotMatch(resolver,/PRIVATE_CARGO_TOKEN|GIT_ASKPASS|--network host/);
+  assert.match(resolver,/Offline resolver refuses private credentials/);
+  assert.match(resolver,/PRIVATE_CARGO_TOKEN/);
+  assert.match(resolver,/GIT_ASKPASS/);
+  assert.doesNotMatch(resolver,/--network host/);
 });
 test("only a proposed Cargo.lock is uploaded and no push or publish occurs",()=>{
   assert.match(trusted,/actions\/upload-artifact@[a-f0-9]{40}/);
