@@ -125,24 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
-          stage="$RUNNER_TEMP/canonical-public-registry-stage"
-          mkdir -p "$stage/src"
-          printf 'pub fn stub() {}\n' > "$stage/src/lib.rs"
-          cat > "$stage/Cargo.toml" <<'TOML'
-          [package]
-          name = "canonical-reviewed-patch-cache"
-          version = "0.0.0"
-          edition = "2021"
-          [dependencies]
-          ctutils = "=0.4.4"
-          quinn-proto = "=0.11.18"
-          rustls = "=0.23.46"
-          rustls-webpki = "=0.103.16"
-          webpki-root-certs = "=1.0.10"
-          webpki-roots = "=1.0.10"
-          tokio = "=1.53.3"
-          TOML
-          cargo +1.95.0 fetch --manifest-path "$stage/Cargo.toml"
+          bash .github/scripts/stage-public-rustsec-patches.sh
       - name: Recheck independent review and immutable Cargo origins before token
         env:
           GH_TOKEN: ${{ github.token }}

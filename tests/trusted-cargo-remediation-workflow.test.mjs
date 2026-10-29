@@ -3,6 +3,8 @@ import {readFile} from "node:fs/promises";
 import {test} from "node:test";
 const w=await readFile(new URL("../.github/workflows/trusted-cargo-remediation.yml",import.meta.url),"utf8");
 const resolver=await readFile(new URL("../.github/scripts/offline-rust-remediate.sh",import.meta.url),"utf8");
+const publicStage=await readFile(new URL("../.github/scripts/stage-public-rustsec-patches.sh",import.meta.url),"utf8");
+const publicWorkflow=await readFile(new URL("../.github/workflows/public-rustsec-patch-contract.yml",import.meta.url),"utf8");
 const pre=w.slice(w.indexOf("  admission:"),w.indexOf("  resolve-only:"));
 const trusted=w.slice(w.indexOf("  resolve-only:"));
 const credentialStart=trusted.indexOf("      - name: Fetch only reviewed immutable private Git");
@@ -40,9 +42,13 @@ test("public corrected registry patches are staged before any private token",()=
   const recheck=trusted.indexOf("Recheck independent review and immutable Cargo origins before token");
   assert.ok(stage>=0&&stage<recheck&&recheck<credentialStart);
   const body=trusted.slice(stage,recheck);
+  assert.ok(body.includes("bash .github/scripts/stage-public-rustsec-patches.sh"));
   for(const version of ["=0.4.4","=0.11.18","=0.23.46","=0.103.16","=1.0.10","=1.53.3"])
-    assert.ok(body.includes(version),"missing pinned public fix "+version);
-  assert.ok(body.includes("cargo +1.95.0 fetch --manifest-path"));
+    assert.ok(publicStage.includes(version),"missing pinned public fix "+version);
+  assert.ok(publicStage.includes("cargo +1.95.0 fetch --locked"));
+  assert.ok(publicStage.includes("cargo +1.95.0 generate-lockfile"));
+  assert.ok(publicStage.includes("cargo +1.95.0 metadata --offline --locked"));
+  assert.ok(publicStage.includes("Public Cargo staging refuses private credentials"));
   assert.ok(!body.includes("secrets.") && !body.includes("PRIVATE_CARGO_TOKEN") && !body.includes("GIT_ASKPASS"));
 });
 test("only the fetch step obtains private credential",()=>{
@@ -67,4 +73,12 @@ test("only a proposed Cargo.lock is uploaded and no push or publish occurs",()=>
   assert.match(trusted,/actions\/upload-artifact@[a-f0-9]{40}/);
   assert.match(trusted,/path: \$\{\{ runner\.temp \}\}\/canonical-remediated-lock\/Cargo\.lock/);
   assert.doesNotMatch(trusted,/^\s*(?:git push|gh pr create|docker push|cargo publish)\b/m);
+});
+
+test("public RustSec patch CI operates without secrets or publishing powers",()=>{
+  assert.match(publicWorkflow,/pull_request:/);
+  assert.match(publicWorkflow,/contents: read/);
+  assert.doesNotMatch(publicWorkflow,/secrets\.|contents: write|id-token: write|pull_request_target:/);
+  assert.ok(publicWorkflow.includes("persist-credentials: false"));
+  assert.ok(publicWorkflow.includes("bash .github/scripts/stage-public-rustsec-patches.sh"));
 });
