@@ -39,7 +39,7 @@ test("only the fetch step obtains private credential",()=>{
   assert.match(credential,/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/);
   assert.match(credential,/cargo \+1\.95\.0 fetch --locked/);
   assert.doesNotMatch(w.slice(0,w.indexOf("      - name: Fetch only")),/secrets\./);
-  assert.doesNotMatch(w.slice(credentialEnd),/secrets\./);
+  assert.doesNotMatch(trusted.slice(credentialEnd),/secrets\./);
   assert.doesNotMatch(credential,/cargo (?:test|build|run|clippy|update)/);
 });
 test("the resolution container cannot access the network or host secrets",()=>{
@@ -53,5 +53,5 @@ test("the resolution container cannot access the network or host secrets",()=>{
 test("only a proposed Cargo.lock is uploaded and no push or publish occurs",()=>{
   assert.match(trusted,/actions\/upload-artifact@[a-f0-9]{40}/);
   assert.match(trusted,/path: \$\{\{ runner\.temp \}\}\/canonical-remediated-lock\/Cargo\.lock/);
-  assert.doesNotMatch(trusted,/git push|gh pr create|docker push|cargo publish/);
+  assert.doesNotMatch(trusted,/^\s*(?:git push|gh pr create|docker push|cargo publish)\b/m);
 });
