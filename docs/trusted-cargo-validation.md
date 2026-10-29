@@ -87,16 +87,24 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
    `main` using an approved change. GitHub generally requires a workflow to
    exist on the default branch before it can be dispatched. Do not bypass
    required checks on PR #130 to do this.
-5. Only after web PR #195 is non-draft, independently approved at its current
-   exact commit and labeled `trusted-private-ci`, dispatch **Trusted reviewed
-   web Cargo validation** with `ref=main`, `web_pr=195`, and the exact head
-   SHA. Approval is explicit for that SHA; changed heads require a new dispatch.
+5. Only after the **selected** web-server PR is non-draft, independently
+   approved at its current exact commit and labeled `trusted-private-ci`,
+   dispatch **Trusted reviewed web Cargo validation** with `ref=main`,
+   `web_pr=<selected PR number>`, and the exact head SHA. Review and
+   environment approval are specific to that candidate SHA; a moved head
+   requires fresh independent review and a new dispatch. Do not substitute a
+   still-draft stacked PR or a stale superseded integration PR.
 6. Require the logged monorepo commit/tree and web candidate commit/tree to
    match the reviewed revisions. The API is read from its pinned public
    monorepo gitlink.
 7. Install advisory tooling and run both locked RustSec audits **before**
-   private Cargo source is fetched. Then verify credentialed `cargo fetch
-   --locked` completes. All subsequent lock regeneration, formatting, Clippy,
+   private Cargo source is fetched. This is an intentional validation gate,
+   **not a RustSec lockfile remediation lane**: with a vulnerable Cargo.lock,
+   it must fail closed before private fetch. A separate, independently
+   approved source-only Cargo resolver operation is required to produce a
+   real updated lockfile for review; never weaken this workflow or write
+   checksums manually. After the audits pass, verify credentialed `cargo
+   fetch --locked` completes. All subsequent lock regeneration, formatting, Clippy,
    Rust tests and the candidate-owned `rkyv` graph script must execute in the
    network-disabled sandbox without the private token. Missing credentials,
    missing dependency revisions or a failed graph proof are hard failures.
@@ -114,8 +122,11 @@ pointer, pushes a Git commit, or bypasses the immutable mainline gitlink policy.
 
 ## Evidence and unresolved dependencies
 
-- Web source/security integration: PR #195, with 94/94 targeted tests passed
-  but full Rust CI blocked by private dependency auth.
+- Web source/security integration: PR #195 was an earlier draft with 94/94
+  targeted tests; current consolidated source boundary candidate is PR #206,
+  with stacked RustSec lock-floor PR #207. Both remain draft and neither is
+  currently eligible for this trusted manual review. In particular, the
+  source `Cargo.lock` still contains known-vulnerable versions (issue #204).
 - Monorepo trust-boundary changes: PR #130.
 - Separate no-release preview: PR #131 passed 39/39 policy/contract tests,
   then correctly failed Gitlink-to-main ancestry admission.
