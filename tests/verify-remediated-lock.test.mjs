@@ -9,7 +9,8 @@ function lock(versions,source=gitSource){
   const lines=['version = 4'];
   for(const [name,version] of Object.entries(versions))
     lines.push('[[package]]','name = "'+name+'"','version = "'+version+'"',
-      'source = "registry+https://github.com/rust-lang/crates.io-index"');
+      'source = "registry+https://github.com/rust-lang/crates.io-index"',
+      'checksum = "'+'f'.repeat(64)+'"');
   lines.push('[[package]]','name = "private-one"','version = "0.1.0"',
     'source = "'+source+'"');
   return lines.join("\n")+"\n";
@@ -31,4 +32,32 @@ test("rejects missing protected registry family",()=>{
 });
 test("rejects credential-like output",()=>{
   assert.throws(()=>verifyResolved(lock(old),lock(floors)+'\n# x-access-token'));
+});
+
+test("rejects substituted package registry even at apparently safe version",()=>{
+  const fraudulent=lock(floors).replace(
+    "registry+https://github.com/rust-lang/crates.io-index",
+    "registry+https://attacker.example/forged-index");
+  assert.throws(()=>verifyResolved(lock(old),fraudulent),/unapproved Cargo registry/);
+});
+test("rejects missing registry checksum, not just vulnerable version",()=>{
+  const tampered=lock(floors).replace('checksum = "'+"f".repeat(64)+'"',"");
+  assert.throws(()=>verifyResolved(lock(old),tampered),/checksum/);
+});
+test("rejects non-hex checksum and duplicate checksum keys",()=>{
+  const first=lock(floors).replace("f".repeat(64),"not-sha256");
+  assert.throws(()=>verifyResolved(lock(old),first),/checksum/);
+  const doubled=lock(floors).replace('checksum = "'+"f".repeat(64)+'"',
+    'checksum = "'+"f".repeat(64)+'"\nchecksum = "'+"f".repeat(64)+'"');
+  assert.throws(()=>verifyResolved(lock(old),doubled),/exactly once/);
+});
+test("rejects duplicate registry package identities hidden after valid floor",()=>{
+  const tampered=lock(floors).replace(
+    '[[package]]\nname = "ctutils"',
+    '[[package]]\nname = "ctutils"\nversion = "0.4.4"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "'+"f".repeat(64)+'"\n\n[[package]]\nname = "ctutils"');
+  assert.throws(()=>verifyResolved(lock(old),tampered),/duplicate Cargo.lock package/);
+});
+test("rejects unreviewed alternate source on unrelated transitive crate",()=>{
+  const tampered=lock(floors)+'\n[[package]]\nname = "transitive"\nversion = "1.0.0"\nsource = "sparse+https://evil.example"\n';
+  assert.throws(()=>verifyResolved(lock(old),tampered),/unapproved Cargo registry/);
 });

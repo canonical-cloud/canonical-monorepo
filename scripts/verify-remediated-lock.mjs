@@ -16,11 +16,32 @@ function parsed(lock){
   assert.match(lock,/^version\s*=\s*\d+\s*$/m);
   const items=lock.split(/^\[\[package\]\]\s*$/m).slice(1);
   assert.ok(items.length>0);
-  return items.map(c=>({
-    name:c.match(/^name\s*=\s*"([^"]+)"\s*$/m)?.[1],
-    version:c.match(/^version\s*=\s*"([^"]+)"\s*$/m)?.[1],
-    source:c.match(/^source\s*=\s*"([^"]+)"\s*$/m)?.[1]
-  }));
+  const registry="registry+https://github.com/rust-lang/crates.io-index";
+  const seen=new Set();
+  return items.map(c=>{
+    const pkg={
+      name:c.match(/^name\s*=\s*"([^"]+)"\s*$/m)?.[1],
+      version:c.match(/^version\s*=\s*"([^"]+)"\s*$/m)?.[1],
+      source:c.match(/^source\s*=\s*"([^"]+)"\s*$/m)?.[1],
+      checksum:c.match(/^checksum\s*=\s*"([^"]+)"\s*$/m)?.[1]
+    };
+    assert.ok(pkg.name && pkg.version,"incomplete Cargo.lock package identity");
+    assert.ok(pkg.source===undefined || pkg.source===registry || pkg.source.startsWith("git+"),
+      "unapproved Cargo registry/source: "+pkg.name);
+    if(pkg.source===registry){
+      assert.match(pkg.checksum??"",/^[a-f0-9]{64}$/,
+        pkg.name+" registry checksum must be present and a 64-hex SHA256");
+      assert.equal((c.match(/^checksum\s*=/gm)??[]).length,1,
+        pkg.name+" registry checksum must appear exactly once");
+    } else {
+      assert.equal(pkg.checksum,undefined,
+        pkg.name+" non-registry package cannot impersonate a registry checksum");
+    }
+    const identity=[pkg.name,pkg.version,pkg.source??""].join("\0");
+    assert.ok(!seen.has(identity),"duplicate Cargo.lock package: "+pkg.name);
+    seen.add(identity);
+    return pkg;
+  });
 }
 export function verifyResolved(original,updated){
   assert.notEqual(original,updated,"no Cargo-resolved lockfile change");
