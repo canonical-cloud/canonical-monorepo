@@ -82,3 +82,16 @@ test("public RustSec patch CI operates without secrets or publishing powers",()=
   assert.ok(publicWorkflow.includes("persist-credentials: false"));
   assert.ok(publicWorkflow.includes("bash .github/scripts/stage-public-rustsec-patches.sh"));
 });
+
+const offlineSmoke=await readFile(new URL("../.github/scripts/smoke-public-rustsec-offline.sh",import.meta.url),"utf8");
+test("unprivileged public offline smoke reproduces sealed Cargo resolver semantics",()=>{
+  assert.match(publicWorkflow,/Execute public Cargo.lock resolution inside network-disabled container/);
+  assert.match(publicWorkflow,/bash .github\/scripts\/smoke-public-rustsec-offline.sh/);
+  for(const expression of [/--network none/,/--read-only/,/--cap-drop ALL/,
+    /--security-opt no-new-privileges/,/source=\$CARGO_HOME,target=\/cache,readonly/,
+    /CARGO_NET_OFFLINE=true/,/tokio@1\.53\.1 --precise 1\.53\.3/,
+    /rustls@0\.23\.45 --precise 0\.23\.46/])
+    assert.match(offlineSmoke,expression);
+  assert.doesNotMatch(offlineSmoke,/secrets\.|--network host|git push|docker push/);
+  assert.match(offlineSmoke,/Refusing credentials in public offline resolver smoke/);
+});
