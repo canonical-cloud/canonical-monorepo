@@ -14,8 +14,11 @@ test("candidate boundary preview has no private credentials or release power", (
   assert.doesNotMatch(workflow, /^\s*(?:git push|gh pr merge|gh pr create|docker push|cargo publish)\b/m);
 });
 test("preview checks exact approved SHA and root Git tree, without rewriting monorepo Gitlink", () => {
-  assert.match(workflow, /WEB_SOURCE_SHA: 7353c6dab5e8e6a4f5cabcbf7d37796e6e90224c/);
-  assert.match(workflow, /WEB_SOURCE_TREE: 3d9d86f2d191f9fa5b85d7c2c43c212fad6b1b73/);
+  assert.match(workflow, /candidate: minimal-secret-removal-202\s+sha: 53a260f50284a4302a4c081073dd9d0eaf3d9fdb\s+tree: 6baa6f8cb38c23206efb77eda95c695791b31359/);
+  assert.match(workflow, /candidate: consolidated-source-boundary-206\s+sha: 7353c6dab5e8e6a4f5cabcbf7d37796e6e90224c\s+tree: 3d9d86f2d191f9fa5b85d7c2c43c212fad6b1b73/);
+  assert.ok(workflow.includes("WEB_SOURCE_SHA: ${{ matrix.sha }}"));
+  assert.ok(workflow.includes("WEB_SOURCE_TREE: ${{ matrix.tree }}"));
+  assert.match(workflow, /fail-fast: false/);
   assert.match(workflow, /git -C apps\/canonical-web-server\.rs rev-parse HEAD/);
   assert.match(workflow, /git -C apps\/canonical-web-server\.rs rev-parse 'HEAD\^\{tree\}'/);
   assert.match(workflow, /git rev-parse HEAD:apps\/canonical-web-server\.rs/);

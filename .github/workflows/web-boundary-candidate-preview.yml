@@ -17,9 +17,19 @@ jobs:
     # Gitlink or supplies approval for a release or merge.
     runs-on: ubuntu-24.04
     timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - candidate: minimal-secret-removal-202
+            sha: 53a260f50284a4302a4c081073dd9d0eaf3d9fdb
+            tree: 6baa6f8cb38c23206efb77eda95c695791b31359
+          - candidate: consolidated-source-boundary-206
+            sha: 7353c6dab5e8e6a4f5cabcbf7d37796e6e90224c
+            tree: 3d9d86f2d191f9fa5b85d7c2c43c212fad6b1b73
     env:
-      WEB_SOURCE_SHA: 7353c6dab5e8e6a4f5cabcbf7d37796e6e90224c
-      WEB_SOURCE_TREE: 3d9d86f2d191f9fa5b85d7c2c43c212fad6b1b73
+      WEB_SOURCE_SHA: ${{ matrix.sha }}
+      WEB_SOURCE_TREE: ${{ matrix.tree }}
     steps:
       - name: Checkout monorepo review source without submodules or tokens
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
