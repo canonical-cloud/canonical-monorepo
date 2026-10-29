@@ -112,11 +112,11 @@ test("post-approval source review is rechecked immediately before token boundary
   assert.doesNotMatch(fresh, /secrets\./);
 });
 test("preflight binds verified source tree to the step that actually writes it", () => {
-  assert.match(preflight, /web_tree: \$\\{\\{ steps\\.validate_tree\\.outputs\\.web_tree \\}\\}/);
-  assert.match(preflight,
-    /- name: Require independent review, opt-in label and exact source tree\\n\\s+id: validate_tree/);
-  assert.doesNotMatch(preflight, /web_tree: \$\\{\\{ steps\\.verify\\.outputs\\.web_tree/);
-  assert.match(preflight, /echo "web_tree=\\$tree" >> "\\$GITHUB_OUTPUT"/);
+  assert.ok(preflight.includes('web_tree: $' + '{{ steps.validate_tree.outputs.web_tree }}'));
+  assert.ok(preflight.includes(
+    '      - name: Require independent review, opt-in label and exact source tree\n        id: validate_tree'));
+  assert.ok(!preflight.includes('steps.verify.outputs.web_tree'));
+  assert.ok(preflight.includes('echo "web_tree=$tree" >> "$GITHUB_OUTPUT"'));
 });
 
 test("preflight tree is confirmed against immutable checked-out Git tree", () => {
