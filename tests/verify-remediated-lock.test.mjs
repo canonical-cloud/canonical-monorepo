@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
+import {readFile} from "node:fs/promises";
 import {floors,verifyResolved} from "../scripts/verify-remediated-lock.mjs";
 const old={"ctutils":"0.4.2","quinn-proto":"0.11.16","rustls":"0.23.45",
 "rustls-webpki":"0.103.15","webpki-root-certs":"1.0.9",
@@ -60,4 +61,9 @@ test("rejects duplicate registry package identities hidden after valid floor",()
 test("rejects unreviewed alternate source on unrelated transitive crate",()=>{
   const tampered=lock(floors)+'\n[[package]]\nname = "transitive"\nversion = "1.0.0"\nsource = "sparse+https://evil.example"\n';
   assert.throws(()=>verifyResolved(lock(old),tampered),/unapproved Cargo registry/);
+});
+
+test("real pinned web Cargo.lock parses completely and still fails closed on vulnerable versions",async()=>{
+  const lock=await readFile(new URL("../apps/canonical-web-server.rs/Cargo.lock",import.meta.url),"utf8");
+  assert.throws(()=>verifyResolved(lock,lock+"\n"),/known vulnerable locked versions remain/);
 });
