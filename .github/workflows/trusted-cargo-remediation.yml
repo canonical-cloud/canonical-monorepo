@@ -1,0 +1,188 @@
+name: Reviewed private Cargo.lock resolution proposal
+on:
+  workflow_dispatch:
+    inputs:
+      web_pr:
+        description: "Reviewed same-repo web PR number"
+        required: true
+        type: string
+      web_sha:
+        description: "Exact reviewed candidate SHA"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: approved-lock-${{ inputs.web_sha }}
+  cancel-in-progress: false
+jobs:
+  admission:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'canonical-cloud/canonical-monorepo'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      web_pr: ${{ steps.verify.outputs.web_pr }}
+      web_sha: ${{ steps.verify.outputs.web_sha }}
+      web_tree: ${{ steps.verify.outputs.web_tree }}
+    steps:
+      - name: Fail closed unless protected remediation environment is independently reviewed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ inputs.web_pr }}
+          WEB_SHA: ${{ inputs.web_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WEB_PR" =~ ^[1-9][0-9]{0,7}$ ]]
+          [[ "$WEB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          gh api repos/canonical-cloud/canonical-monorepo/environments/canonical-private-cargo-remediation |
+            jq -e '.deployment_branch_policy.protected_branches == true and
+              any(.protection_rules[]?; .type == "required_reviewers" and
+                (.reviewers | length) > 0 and .prevent_self_review == true)' >/dev/null
+      - name: Checkout immutable trusted main workflow
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Approve immutable current-head source tree
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ inputs.web_pr }}
+          WEB_SHA: ${{ inputs.web_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          repo=canonical-cloud/canonical-web-server.rs
+          gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/pr.json"
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/reviews.json"
+          gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/commit.json"
+          tree="$(jq -r '.tree.sha' "$RUNNER_TEMP/commit.json")"
+          node scripts/trusted-remediation-admission.mjs \
+            "$RUNNER_TEMP/pr.json" "$RUNNER_TEMP/reviews.json" \
+            "$RUNNER_TEMP/commit.json" "$WEB_PR" "$WEB_SHA" "$tree"
+          echo "web_pr=$WEB_PR" >> "$GITHUB_OUTPUT"
+          echo "web_sha=$WEB_SHA" >> "$GITHUB_OUTPUT"
+          echo "web_tree=$tree" >> "$GITHUB_OUTPUT"
+  resolve-only:
+    needs: admission
+    if: needs.admission.result == 'success'
+    environment: canonical-private-cargo-remediation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 85
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted scripts from protected main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Checkout exact reviewed candidate without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: canonical-cloud/canonical-web-server.rs
+          ref: ${{ needs.admission.outputs.web_sha }}
+          path: apps/canonical-web-server.rs
+          persist-credentials: false
+          submodules: false
+      - name: Check immutable commit and Git tree
+        env:
+          HEAD_SHA: ${{ needs.admission.outputs.web_sha }}
+          TREE_SHA: ${{ needs.admission.outputs.web_tree }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C apps/canonical-web-server.rs rev-parse HEAD)" = "$HEAD_SHA"
+          test "$(git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}')" = "$TREE_SHA"
+      - name: Install Node 22 and pinned Rust toolchain
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Install Rust 1.95
+        run: rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+      - name: Prepare disposable Rust image and private cache before credentials
+        run: |
+          set -euo pipefail
+          bash .github/scripts/prepare-rust-review-image.sh
+          cache="$RUNNER_TEMP/canonical-lock-proposal-cache"
+          mkdir -p "$cache"
+          chmod 0700 "$cache"
+          echo "CANONICAL_PRIVATE_CARGO_CACHE=$cache" >> "$GITHUB_ENV"
+      - name: Prestage fixed public crates with no private source or tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
+          bash .github/scripts/stage-public-rustsec-patches.sh
+      - name: Recheck independent review and immutable Cargo origins before token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEB_PR: ${{ needs.admission.outputs.web_pr }}
+          WEB_SHA: ${{ needs.admission.outputs.web_sha }}
+          WEB_TREE: ${{ needs.admission.outputs.web_tree }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo=canonical-cloud/canonical-web-server.rs
+          gh api "repos/$repo/pulls/$WEB_PR" > "$RUNNER_TEMP/recheck-pr.json"
+          gh api --paginate "repos/$repo/pulls/$WEB_PR/reviews?per_page=100" |
+            jq -s 'add' > "$RUNNER_TEMP/recheck-reviews.json"
+          gh api "repos/$repo/git/commits/$WEB_SHA" > "$RUNNER_TEMP/recheck-commit.json"
+          node scripts/trusted-remediation-admission.mjs \
+            "$RUNNER_TEMP/recheck-pr.json" "$RUNNER_TEMP/recheck-reviews.json" \
+            "$RUNNER_TEMP/recheck-commit.json" "$WEB_PR" "$WEB_SHA" "$WEB_TREE"
+          node --input-type=module -e '
+            import { verifyFilePair } from "./scripts/check-cargo-git-sources.mjs";
+            await verifyFilePair("web","apps/canonical-web-server.rs/Cargo.toml",
+              "apps/canonical-web-server.rs/Cargo.lock");
+          '
+          test ! -e apps/canonical-web-server.rs/.cargo/config
+          test ! -e apps/canonical-web-server.rs/.cargo/config.toml
+      - name: Fetch only reviewed immutable private Git and registry dependencies
+        env:
+          PRIVATE_CARGO_TOKEN: ${{ secrets.CANONICAL_PRIVATE_CARGO_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_CARGO_TOKEN" || { echo '::error::Missing reviewed read-only token'; exit 1; }
+          helper="$RUNNER_TEMP/approved-cargo-askpass.sh"
+          install -m 0700 .github/scripts/private-cargo-askpass.sh "$helper"
+          trap 'rm -f -- "$helper"' EXIT
+          export GIT_ASKPASS="$helper" GIT_TERMINAL_PROMPT=0 CARGO_NET_GIT_FETCH_WITH_CLI=true
+          export CARGO_HOME="$CANONICAL_PRIVATE_CARGO_CACHE"
+          cargo +1.95.0 fetch --locked --manifest-path apps/canonical-web-server.rs/Cargo.toml
+      - name: Propose Cargo-resolved lockfile inside offline secret-free sandbox
+        run: bash .github/scripts/offline-rust-remediate.sh
+      - name: Verify remediated families and unchanged immutable Git dependency graph
+        env:
+          PROPOSED_LOCK: ${{ runner.temp }}/canonical-remediated-lock/Cargo.lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-remediated-lock.mjs apps/canonical-web-server.rs/Cargo.lock "$PROPOSED_LOCK"
+          node --input-type=module -e '
+            import { verifyFilePair } from "./scripts/check-cargo-git-sources.mjs";
+            await verifyFilePair("web","apps/canonical-web-server.rs/Cargo.toml",
+              process.env.PROPOSED_LOCK);
+          '
+      - name: Upload ONLY proposed lockfile for independent audit and PR review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: proposed-web-cargo-lock-${{ inputs.web_sha }}
+          path: ${{ runner.temp }}/canonical-remediated-lock/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+      - name: Record limitation
+        run: echo "Proposed Cargo.lock only. No full RustSec audit, build, release, git push, or PR merge." >> "$GITHUB_STEP_SUMMARY"

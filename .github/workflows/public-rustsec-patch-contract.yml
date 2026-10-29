@@ -1,0 +1,40 @@
+name: Public RustSec patch cache smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/public-rustsec-patch-contract.yml"
+      - ".github/workflows/trusted-cargo-remediation.yml"
+      - ".github/scripts/stage-public-rustsec-patches.sh"
+      - ".github/scripts/smoke-public-rustsec-offline.sh"
+      - "tests/trusted-cargo-remediation-workflow.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-cargo-patches:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout public-only probe without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.95
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Verify public stage shell syntax
+        run: bash -n .github/scripts/stage-public-rustsec-patches.sh
+      - name: Resolve exact RustSec public crates and offline cache metadata
+        shell: bash
+        env:
+          CARGO_HOME: ${{ runner.temp }}/canonical-public-rustsec-ci-cache
+        run: bash .github/scripts/stage-public-rustsec-patches.sh
+      - name: Validate isolated offline resolver shell syntax
+        run: bash -n .github/scripts/smoke-public-rustsec-offline.sh
+      - name: Execute public Cargo.lock resolution inside network-disabled container
+        shell: bash
+        env:
+          CARGO_HOME: ${{ runner.temp }}/canonical-public-rustsec-ci-cache
+        run: bash .github/scripts/smoke-public-rustsec-offline.sh
