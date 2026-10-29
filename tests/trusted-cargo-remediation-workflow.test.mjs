@@ -95,3 +95,11 @@ test("unprivileged public offline smoke reproduces sealed Cargo resolver semanti
   assert.doesNotMatch(offlineSmoke,/secrets\.|--network host|git push|docker push/);
   assert.match(offlineSmoke,/Refusing credentials in public offline resolver smoke/);
 });
+
+test("both non-root offline resolvers give the isolated scratch tmpfs writable sticky permissions",()=>{
+  for(const source of [resolver,offlineSmoke]){
+    assert.match(source,/--user "\$\(id -u\):\$\(id -g\)"/);
+    assert.match(source,/--tmpfs \/scratch:rw,nosuid,nodev,mode=1777,size=/);
+    assert.doesNotMatch(source,/--privileged|--cap-add|--network host/);
+  }
+});

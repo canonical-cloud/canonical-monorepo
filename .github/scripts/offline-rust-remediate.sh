@@ -19,7 +19,7 @@ if docker run --rm --pull=never --network none --ipc none --read-only \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 6g --cpus 2 \
   --user "$(id -u):$(id -g)" \
-  --tmpfs /scratch:rw,nosuid,nodev,size=3g \
+  --tmpfs /scratch:rw,nosuid,nodev,mode=1777,size=3g \
   --mount "type=bind,source=$src,target=/source,readonly" \
   --mount "type=bind,source=$CANONICAL_PRIVATE_CARGO_CACHE,target=/cache,readonly" \
   --mount "type=bind,source=$destination,target=/output" \

@@ -41,7 +41,7 @@ docker run --rm --pull=never --network none --ipc none --read-only \
   --cap-drop ALL --security-opt no-new-privileges \
   --pids-limit 128 --memory 3g --cpus 2 \
   --user "$(id -u):$(id -g)" \
-  --tmpfs /scratch:rw,nosuid,nodev,size=2g \
+  --tmpfs /scratch:rw,nosuid,nodev,mode=1777,size=2g \
   --mount "type=bind,source=$work,target=/source,readonly" \
   --mount "type=bind,source=$CARGO_HOME,target=/cache,readonly" \
   --mount "type=bind,source=$work/proposed,target=/output" \
