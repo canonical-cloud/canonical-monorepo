@@ -35,6 +35,16 @@ test("revalidates current exact head and Git tree after environment approval",()
   assert.match(trusted,/trusted-remediation-admission\.mjs/);
   assert.ok(trusted.indexOf("Recheck independent review")<credentialStart);
 });
+test("public corrected registry patches are staged before any private token",()=>{
+  const stage=trusted.indexOf("Prestage fixed public crates with no private source or tokens");
+  const recheck=trusted.indexOf("Recheck independent review and immutable Cargo origins before token");
+  assert.ok(stage>=0&&stage<recheck&&recheck<credentialStart);
+  const body=trusted.slice(stage,recheck);
+  for(const version of ["=0.4.4","=0.11.18","=0.23.46","=0.103.16","=1.0.10","=1.53.3"])
+    assert.ok(body.includes(version),"missing pinned public fix "+version);
+  assert.match(body,/cargo \\+1\\.95\\.0 fetch --manifest-path/);
+  assert.doesNotMatch(body,/secrets\\.|PRIVATE_CARGO_TOKEN|GIT_ASKPASS/);
+});
 test("only the fetch step obtains private credential",()=>{
   assert.match(credential,/secrets\.CANONICAL_PRIVATE_CARGO_READ_TOKEN/);
   assert.match(credential,/cargo \+1\.95\.0 fetch --locked/);
