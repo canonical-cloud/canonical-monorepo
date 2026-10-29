@@ -103,3 +103,15 @@ test("both non-root offline resolvers give the isolated scratch tmpfs writable s
     assert.doesNotMatch(source,/--privileged|--cap-add|--network host/);
   }
 });
+
+test("the public offline smoke validates all seven approved Cargo lock upgrades",()=>{
+  for(const command of [
+    "ctutils@0.4.2 --precise 0.4.4",
+    "quinn-proto@0.11.16 --precise 0.11.18",
+    "rustls@0.23.45 --precise 0.23.46",
+    "rustls-webpki@0.103.15 --precise 0.103.16",
+    "webpki-root-certs@1.0.9 --precise 1.0.10",
+    "webpki-roots@1.0.9 --precise 1.0.10",
+    "tokio@1.53.1 --precise 1.53.3"
+  ])assert.ok(offlineSmoke.includes(command),command+" is not exercised offline");
+});

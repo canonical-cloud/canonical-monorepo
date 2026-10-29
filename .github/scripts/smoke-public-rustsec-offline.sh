@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unprivileged reproduction of the trusted resolver's read-only-cache pattern.
-# Uses only public Tokio/rustls crates; never copies private sources.
+# Uses only public RustSec patch crates; never copies private sources.
 set -euo pipefail
 : "$RUNNER_TEMP" "$CARGO_HOME"
 [[ "$CARGO_HOME" == "$RUNNER_TEMP/"* ]] || { echo "Disposable runner-local Cargo home required" >&2; exit 1; }
@@ -18,8 +18,13 @@ name = "canonical-offline-public-smoke"
 version = "0.0.0"
 edition = "2021"
 [dependencies]
-tokio = "=1.53.1"
+ctutils = "=0.4.2"
+quinn-proto = "=0.11.16"
 rustls = "=0.23.45"
+rustls-webpki = "=0.103.15"
+webpki-root-certs = "=1.0.9"
+webpki-roots = "=1.0.9"
+tokio = "=1.53.1"
 TOML
 # Host network available only BEFORE the isolated resolver starts.
 cargo +1.95.0 generate-lockfile --manifest-path "$work/Cargo.toml"
@@ -30,8 +35,13 @@ name = "canonical-offline-public-smoke"
 version = "0.0.0"
 edition = "2021"
 [dependencies]
-tokio = "^1.53.1"
+ctutils = "^0.4.2"
+quinn-proto = "^0.11.16"
 rustls = "^0.23.45"
+rustls-webpki = "^0.103.15"
+webpki-root-certs = "^1.0.9"
+webpki-roots = "^1.0.9"
+tokio = "^1.53.1"
 TOML
 image='rust:1.95.0-bookworm'
 docker pull "$image" >/dev/null
@@ -54,8 +64,13 @@ docker run --rm --pull=never --network none --ipc none --read-only \
     done
     cp -a /source/. /scratch/source/
     cd /scratch/source
-    cargo update --offline -p tokio@1.53.1 --precise 1.53.3
+    cargo update --offline -p ctutils@0.4.2 --precise 0.4.4
+    cargo update --offline -p quinn-proto@0.11.16 --precise 0.11.18
     cargo update --offline -p rustls@0.23.45 --precise 0.23.46
+    cargo update --offline -p rustls-webpki@0.103.15 --precise 0.103.16
+    cargo update --offline -p webpki-root-certs@1.0.9 --precise 1.0.10
+    cargo update --offline -p webpki-roots@1.0.9 --precise 1.0.10
+    cargo update --offline -p tokio@1.53.1 --precise 1.53.3
     test -s Cargo.lock
     cp Cargo.lock /output/Cargo.lock
   '
@@ -64,9 +79,9 @@ LOCK="$work/proposed/Cargo.lock" node --input-type=module -e '
   import assert from "node:assert/strict";
   const text=fs.readFileSync(process.env.LOCK,"utf8");
   const packages=text.split(/^\[\[package\]\]\s*$/m).slice(1);
-  for(const [name,version] of [["tokio","1.53.3"],["rustls","0.23.46"]]){
+  for(const [name,version] of [["ctutils","0.4.4"],["quinn-proto","0.11.18"],["rustls","0.23.46"],["rustls-webpki","0.103.16"],["webpki-root-certs","1.0.10"],["webpki-roots","1.0.10"],["tokio","1.53.3"]]){
     assert.ok(packages.some(p=>p.includes("name = \""+name+"\"") &&
       p.includes("version = \""+version+"\"")),name+" did not update offline");
   }
 '
-echo "Public offline resolver: network-disabled, read-only cache, two Cargo updates passed."
+echo "Public offline resolver: network-disabled, read-only cache, seven Cargo updates passed."
