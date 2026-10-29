@@ -23,6 +23,8 @@ const boundaryDocs = await readFile(
 );
 const allowedReadOnlyReusableWorkflows = new Set([
   "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@202c89a988a9adaa43f5113d9d0d1d009bf60e3b",
+  "canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c",
+  "canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0",
   "ores-otel/.github/.github/workflows/source-policy-lint.yml@c417efc488bb4ca84e078fad9626f55b374913dd",
 ]);
 
@@ -257,6 +259,26 @@ test("application release boundary rejects known publication escape hatches", ()
     [],
     "immutable read-only hierarchy validation must not be treated as publishing",
   );
+
+  const currentReadOnlyHierarchy = `${safePreamble}jobs:\n  validate:\n    uses: canonical-cloud/canonical.cloud/.github/workflows/agents-hierarchy.yml@adffdd4fe89aebdff1494195389b16a3cebc308c`;
+  assert.deepEqual(applicationWorkflowViolations(currentReadOnlyHierarchy), [],
+    "reviewed immutable read-only validator must not be treated as a publisher");
+  assert.deepEqual(
+    applicationWorkflowViolations(currentReadOnlyHierarchy.replace(
+      "adffdd4fe89aebdff1494195389b16a3cebc308c",
+      "0000000000000000000000000000000000000000")),
+    ["outbound reusable workflow"],
+    "unknown validator SHA must fail closed");
+
+  const currentReadOnlyOrganizationPolicy = `${safePreamble}jobs:\n  policy:\n    uses: canonical-cloud/.github/.github/workflows/reusable-policy.yml@0ea46201f6a0055aa5d28c465488394d3c2c56c0`;
+  assert.deepEqual(applicationWorkflowViolations(currentReadOnlyOrganizationPolicy), [],
+    "reviewed immutable read-only organization policy must not be treated as a publisher");
+  assert.deepEqual(
+    applicationWorkflowViolations(currentReadOnlyOrganizationPolicy.replace(
+      "0ea46201f6a0055aa5d28c465488394d3c2c56c0",
+      "0000000000000000000000000000000000000000")),
+    ["outbound reusable workflow"],
+    "unrecognized organization policy SHA must fail closed");
 
   const fixtures = [
     ["write-all permissions", "permissions: write-all"],

@@ -420,48 +420,59 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+const LEGACY_ROOT_AGENT_POINTER = "# Agent instructions\n\nCanonical repository instructions live in [`agents.md`](agents.md).\n";
+
+function selectAgentSafetyPolicy({ lowercase, uppercase, allowLegacyPointer = false, label }) {
+  assert.ok(lowercase !== null || uppercase !== null,
+    `${label}: no canonical agent safety policy found`);
+  if (lowercase !== null && uppercase !== null && lowercase !== uppercase) {
+    assert.ok(allowLegacyPointer,
+      `${label}: divergent AGENTS.md/agents.md authorities are forbidden`);
+    assert.equal(uppercase, LEGACY_ROOT_AGENT_POINTER,
+      `${label}: legacy uppercase file must be the exact minimal pointer`);
+  }
+  const policy = lowercase ?? uppercase;
+  assert.match(policy, /Command safety/i, `${label}: Command safety guidance required`);
+  assert.match(policy, /git rm/, `${label}: tracked-file removal guidance required`);
+  assert.match(policy, /git mv/, `${label}: tracked-file move guidance required`);
+  return policy;
+}
+
+test("agent policies support reviewed modern uppercase authority without losing safety", () => {
   const repositories = [
     "",
     ...parseGitmodules()
-      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .filter((module) => module.private !== "true" ||
+        existsSync(path.join(root, module.path, "agents.md")) ||
+        existsSync(path.join(root, module.path, "AGENTS.md")))
       .map((module) => module.path),
   ];
 
   for (const repository of repositories) {
     const label = repository || ".";
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
-    const canonical = read(path.join(repository, "agents.md"));
-
-    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
-    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
-    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
-
-    // Lowercase `agents.md` is the required authority. Some app repositories
-    // intentionally omit the optional uppercase compatibility pointer; Linux
-    // CI must not infer that path from macOS's case-insensitive filesystem.
-    if (!existsSync(pointerPath)) {
-      continue;
-    }
-
-    const pointer = read(path.join(repository, "AGENTS.md"));
-    const samePhysicalFile =
-      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
-      statSync(canonicalPath).ino === statSync(pointerPath).ino;
-    if (samePhysicalFile) {
-      // Case-insensitive filesystems cannot materialize both tracked names.
-      // The indexed repository still carries the uppercase pointer; locally,
-      // verify the canonical lowercase policy instead of treating the alias as
-      // independent content.
-      continue;
-    }
-
-    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
-    assert.doesNotMatch(
-      pointer,
-      /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
-      `${label}/AGENTS.md must not duplicate canonical policy`,
-    );
+    const lowercasePath = path.join(root, repository, "agents.md");
+    const uppercasePath = path.join(root, repository, "AGENTS.md");
+    selectAgentSafetyPolicy({
+      lowercase: existsSync(lowercasePath) ? read(path.join(repository, "agents.md")) : null,
+      uppercase: existsSync(uppercasePath) ? read(path.join(repository, "AGENTS.md")) : null,
+      allowLegacyPointer: repository === "",
+      label,
+    });
   }
+});
+
+test("agent layout rejects conflicting policy variants and pointer-only authorities", () => {
+  const safe = "## Command safety\nPrefer git rm and git mv.\n";
+  assert.equal(selectAgentSafetyPolicy({ lowercase: null, uppercase: safe, label: "modern" }), safe);
+  assert.equal(selectAgentSafetyPolicy({ lowercase: safe, uppercase: safe, label: "identical" }), safe);
+  assert.equal(selectAgentSafetyPolicy({ lowercase: safe, uppercase: LEGACY_ROOT_AGENT_POINTER,
+    allowLegacyPointer: true, label: "legacy-root" }), safe);
+  assert.throws(() => selectAgentSafetyPolicy({ lowercase: safe, uppercase: "conflicting",
+    label: "application" }), /divergent/);
+  assert.throws(() => selectAgentSafetyPolicy({ lowercase: safe, uppercase: LEGACY_ROOT_AGENT_POINTER,
+    label: "application" }), /divergent/);
+  assert.throws(() => selectAgentSafetyPolicy({ lowercase: null, uppercase: LEGACY_ROOT_AGENT_POINTER,
+    label: "pointer-only" }), /Command safety/);
+  assert.throws(() => selectAgentSafetyPolicy({ lowercase: null, uppercase: null,
+    label: "missing" }), /no canonical/);
 });
