@@ -32,7 +32,7 @@ jobs:
     outputs:
       web_sha: ${{ steps.verify.outputs.web_sha }}
       web_pr: ${{ steps.verify.outputs.web_pr }}
-      web_tree: ${{ steps.verify.outputs.web_tree }}
+      web_tree: ${{ steps.validate_tree.outputs.web_tree }}
     steps:
       - name: Verify immutable candidate and approved environment configuration
         id: verify
@@ -83,6 +83,7 @@ jobs:
         with:
           node-version: "22"
       - name: Require independent review, opt-in label and exact source tree
+        id: validate_tree
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
