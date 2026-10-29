@@ -1,0 +1,53 @@
+name: Web-server release-boundary candidate preview (read-only)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/web-boundary-candidate-preview.yml"
+      - "tests/web-boundary-candidate-preview-workflow.test.mjs"
+      - "tests/ci-cd-contract.test.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  candidate-preview:
+    # Source-only preview: it deliberately NEVER changes the protected-main
+    # Gitlink or supplies approval for a release or merge.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      WEB_SOURCE_SHA: 7353c6dab5e8e6a4f5cabcbf7d37796e6e90224c
+      WEB_SOURCE_TREE: 3d9d86f2d191f9fa5b85d7c2c43c212fad6b1b73
+    steps:
+      - name: Checkout monorepo review source without submodules or tokens
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Check out exact public web candidate into disposable working tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: canonical-cloud/canonical-web-server.rs
+          ref: ${{ env.WEB_SOURCE_SHA }}
+          path: apps/canonical-web-server.rs
+          persist-credentials: false
+          submodules: false
+      - name: Verify candidate tree and unchanged Gitlink metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C apps/canonical-web-server.rs rev-parse HEAD)" = "$WEB_SOURCE_SHA"
+          test "$(git -C apps/canonical-web-server.rs rev-parse 'HEAD^{tree}')" = "$WEB_SOURCE_TREE"
+          git rev-parse HEAD:apps/canonical-web-server.rs
+          echo "Read-only preview of $WEB_SOURCE_SHA; Gitlink remains unchanged in commit HEAD."
+      - name: Install Node 22 for monorepo policy test
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Apply existing monorepo release-boundary policy to reviewed web candidate
+        run: node --test --test-name-pattern="pinned app workflows cannot publish or declare a competing release" tests/ci-cd-contract.test.mjs
+      - name: State non-merge limitation
+        run: |
+          echo "Candidate source-only boundary preview succeeded; pinned Gitlink and source CI still require independent approval and full integration." >> "$GITHUB_STEP_SUMMARY"
