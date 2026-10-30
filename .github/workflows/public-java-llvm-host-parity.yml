@@ -1,0 +1,64 @@
+name: Public native host parity preflight (independent carrier)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-java-llvm-host-parity.yml'
+permissions:
+  contents: read
+jobs:
+  graalvm25:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: false
+      - uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
+        with:
+          java-version: '25'
+          distribution: graalvm
+      - name: Compile and run synthetic Java only
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "canonical-cloud/canonical-monorepo"
+          test "$GITHUB_REPOSITORY_ID" = "1294570747"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'class Smoke { public static void main(String[] a) { long v=0; for(int i=1;i<=1000;i++) v+=i; if(v!=500500) throw new AssertionError(); System.out.println("PUBLIC_JAVA_PASS "+v); }}' > "$RUNNER_TEMP/Smoke.java"
+          javac -d "$RUNNER_TEMP" "$RUNNER_TEMP/Smoke.java"
+          java -cp "$RUNNER_TEMP" Smoke
+          mvn -version
+          native-image --version
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git rev-parse 'HEAD^{tree}'
+  clang:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Compile and run synthetic C++ with Clang sanitizers
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "canonical-cloud/canonical-monorepo"
+          test "$GITHUB_REPOSITORY_ID" = "1294570747"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' '#include <iostream>' 'int main(){ long v=0; for(int i=1;i<=1000;i++)v+=i; if(v!=500500)return 1; std::cout<<"PUBLIC_CLANG_PASS "<<v<<"\\n"; }' > "$RUNNER_TEMP/smoke.cpp"
+          clang++ -std=c++20 -Wall -Wextra -Werror -fsanitize=address,undefined "$RUNNER_TEMP/smoke.cpp" -o "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke"
+          cmake --version
+          ctest --version
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git rev-parse 'HEAD^{tree}'
