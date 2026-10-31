@@ -1,0 +1,484 @@
+name: Public native host parity preflight (independent carrier)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/public-java-llvm-host-parity.yml'
+permissions:
+  contents: read
+jobs:
+  graalvm25:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: false
+      - uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173
+        with:
+          java-version: '25'
+          distribution: graalvm
+      - name: Compile and run synthetic Java only
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "canonical-cloud/canonical-monorepo"
+          test "$GITHUB_REPOSITORY_ID" = "1294570747"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          echo 'class Smoke { public static void main(String[] a) { long v=0; for(int i=1;i<=1000;i++) v+=i; if(v!=500500) throw new AssertionError(); System.out.println("PUBLIC_JAVA_PASS "+v); }}' > "$RUNNER_TEMP/Smoke.java"
+          javac -d "$RUNNER_TEMP" "$RUNNER_TEMP/Smoke.java"
+          java -cp "$RUNNER_TEMP" Smoke
+          mvn -version
+          native-image --version
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git rev-parse 'HEAD^{tree}'
+  clang:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          submodules: false
+      - name: Compile and run synthetic C++ with Clang sanitizers
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "canonical-cloud/canonical-monorepo"
+          test "$GITHUB_REPOSITORY_ID" = "1294570747"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          printf '%s\n' '#include <iostream>' 'int main(){ long v=0; for(int i=1;i<=1000;i++)v+=i; if(v!=500500)return 1; std::cout<<"PUBLIC_CLANG_PASS "<<v<<"\\n"; }' > "$RUNNER_TEMP/smoke.cpp"
+          clang++ -std=c++20 -Wall -Wextra -Werror -fsanitize=address,undefined "$RUNNER_TEMP/smoke.cpp" -o "$RUNNER_TEMP/smoke"
+          "$RUNNER_TEMP/smoke"
+          cmake --version
+          ctest --version
+
+          cat >"$RUNNER_TEMP/cohort.c" <<'EOF'
+          #include <pthread.h>
+          #include <sched.h>
+          #include <stdatomic.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+
+          typedef struct {
+              atomic_uint *ready;
+              atomic_bool *start;
+              atomic_uint *entered;
+          } arg_t;
+
+          static void check(int ok) {
+              if (!ok) abort();
+          }
+
+          static void *worker(void *raw) {
+              arg_t *arg = (arg_t *)raw;
+              atomic_fetch_add_explicit(arg->ready, 1u, memory_order_release);
+              while (!atomic_load_explicit(arg->start, memory_order_acquire))
+                  sched_yield();
+              atomic_fetch_add_explicit(arg->entered, 1u, memory_order_seq_cst);
+              return NULL;
+          }
+
+          static void run_case(unsigned count) {
+              pthread_t threads[15];
+              arg_t args[15];
+              atomic_uint ready = ATOMIC_VAR_INIT(0u);
+              atomic_bool start = ATOMIC_VAR_INIT(0);
+              atomic_uint entered = ATOMIC_VAR_INIT(0u);
+              check(count == 3u || count == 7u || count == 15u);
+              for (unsigned i = 0; i < count; ++i) {
+                  args[i] = (arg_t){&ready, &start, &entered};
+                  check(pthread_create(&threads[i], NULL, worker, &args[i]) == 0);
+              }
+              while (atomic_load_explicit(&ready, memory_order_acquire) != count)
+                  sched_yield();
+              check(atomic_load_explicit(&entered, memory_order_seq_cst) == 0u);
+              atomic_store_explicit(&start, 1, memory_order_release);
+              for (unsigned i = 0; i < count; ++i)
+                  check(pthread_join(threads[i], NULL) == 0);
+              check(atomic_load_explicit(&entered, memory_order_seq_cst) == count);
+          }
+
+          int main(void) {
+              run_case(3u);
+              run_case(7u);
+              run_case(15u);
+              puts("PUBLIC_C11_3_7_15_COHORT_PASS");
+              return 0;
+          }
+          EOF
+          for compiler in gcc clang; do
+            "$compiler" -std=c11 -O2 -pthread -Wall -Wextra -Wpedantic -Werror               "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-$compiler"
+            "$RUNNER_TEMP/cohort-$compiler"
+          done
+          clang -std=c11 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror             -fsanitize=address,undefined -fno-omit-frame-pointer             "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-sanitized"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1           UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1             "$RUNNER_TEMP/cohort-sanitized"
+
+          cat >"$RUNNER_TEMP/rw-fairness.cpp" <<'EOF'
+          #include <array>
+          #include <cstdint>
+          #include <cstdlib>
+          #include <iostream>
+          #include <vector>
+
+          static void check(bool ok) {
+              if (!ok) std::abort();
+          }
+
+          enum class Access { Read, Write };
+
+          struct Ticket {
+              std::uint64_t sequence = 0;
+              Access access = Access::Read;
+              bool active = false;
+              bool waiting = false;
+          };
+
+          struct Gate {
+              std::uint64_t next_sequence = 0;
+              unsigned active_readers = 0;
+              bool active_writer = false;
+              std::vector<Ticket> tickets;
+
+              std::uint64_t request(Access access) {
+                  Ticket t;
+                  t.sequence = ++next_sequence;
+                  t.access = access;
+                  t.waiting = true;
+                  tickets.push_back(t);
+                  try_promote();
+                  return t.sequence;
+              }
+
+              Ticket* find(std::uint64_t seq) {
+                  for (auto& t : tickets)
+                      if (t.sequence == seq) return &t;
+                  return nullptr;
+              }
+
+              std::vector<std::uint64_t> release(std::uint64_t seq) {
+                  Ticket* t = find(seq);
+                  check(t != nullptr && t->active);
+                  if (t->access == Access::Write) {
+                      check(active_writer);
+                      active_writer = false;
+                  } else {
+                      check(active_readers > 0);
+                      --active_readers;
+                  }
+                  t->active = false;
+                  return promote_all();
+              }
+
+              bool can_start(std::uint64_t seq) {
+                  Ticket* t = find(seq);
+                  return t != nullptr && t->active;
+              }
+
+              Ticket* first_waiter() {
+                  Ticket* best = nullptr;
+                  for (auto& t : tickets) {
+                      if (!t.waiting) continue;
+                      if (!best || t.sequence < best->sequence) best = &t;
+                  }
+                  return best;
+              }
+
+              bool any_active() const {
+                  return active_writer || active_readers != 0;
+              }
+
+              void try_promote() {
+                  (void)promote_all();
+              }
+
+              std::vector<std::uint64_t> promote_all() {
+                  std::vector<std::uint64_t> admitted;
+                  for (;;) {
+                      Ticket* next = first_waiter();
+                      if (!next || active_writer) break;
+                      if (next->access == Access::Write && any_active()) break;
+                      next->waiting = false;
+                      next->active = true;
+                      if (next->access == Access::Write) {
+                          check(active_readers == 0);
+                          active_writer = true;
+                          admitted.push_back(next->sequence);
+                          break;
+                      }
+                      ++active_readers;
+                      admitted.push_back(next->sequence);
+                  }
+                  return admitted;
+              }
+          };
+
+          static void run_case(unsigned late_count) {
+              Gate gate;
+              const auto holder = gate.request(Access::Read);
+              check(gate.can_start(holder));
+
+              const auto writer = gate.request(Access::Write);
+              check(!gate.can_start(writer));
+
+              std::vector<std::uint64_t> late;
+              late.reserve(late_count);
+              for (unsigned i = 0; i < late_count; ++i) {
+                  late.push_back(gate.request(Access::Read));
+                  check(!gate.can_start(late.back()));
+                  check(writer < late.back());
+              }
+
+              auto wake = gate.release(holder);
+              check(wake.size() == 1);
+              check(wake[0] == writer);
+              check(gate.can_start(writer));
+              for (auto seq : late) check(!gate.can_start(seq));
+
+              wake = gate.release(writer);
+              check(wake.size() == late.size());
+              for (std::size_t i = 0; i < late.size(); ++i) {
+                  check(wake[i] == late[i]);
+                  check(gate.can_start(late[i]));
+              }
+
+              for (auto seq : late) {
+                  auto none = gate.release(seq);
+                  check(none.empty());
+              }
+              check(!gate.any_active());
+              check(gate.first_waiter() == nullptr);
+          }
+
+          int main() {
+              for (unsigned count : std::array<unsigned, 3>{3u, 7u, 15u})
+                  run_case(count);
+              std::cout << "PUBLIC_RW_FIFO_FAIRNESS_PASS late=3,7,15\n";
+              return 0;
+          }
+          EOF
+
+          for compiler in g++ clang++; do
+            "$compiler" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+              "$RUNNER_TEMP/rw-fairness.cpp" -o "$RUNNER_TEMP/rw-fairness-$compiler"
+            "$RUNNER_TEMP/rw-fairness-$compiler"
+          done
+          clang++ -std=c++20 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/rw-fairness.cpp" -o "$RUNNER_TEMP/rw-fairness-asan"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            "$RUNNER_TEMP/rw-fairness-asan"
+
+          cat >"$RUNNER_TEMP/claim-before-probe.cpp" <<'EOF'
+          #include <atomic>
+          #include <cstdlib>
+          #include <iostream>
+          #include <thread>
+          #include <vector>
+
+          static void check(bool ok) {
+              if (!ok) std::abort();
+          }
+
+          // Deterministic counterexample for the old ordering:
+          // both observers see active=true before either owns a release claim.
+          // The delayed loser then performs its retirement query after release.
+          static void demonstrate_unsafe_old_order() {
+              std::atomic<bool> active{true};
+              std::atomic<bool> released{false};
+              std::atomic<int> loaded{0};
+              std::atomic<int> query_after_release{0};
+
+              std::thread winner([&] {
+                  check(active.load(std::memory_order_acquire));
+                  loaded.fetch_add(1, std::memory_order_release);
+                  while (loaded.load(std::memory_order_acquire) != 2)
+                      std::this_thread::yield();
+                  // Retirement query happens here in the old order.
+                  (void)active.exchange(false, std::memory_order_acq_rel);
+                  released.store(true, std::memory_order_release);
+              });
+              std::thread delayed_loser([&] {
+                  check(active.load(std::memory_order_acquire));
+                  loaded.fetch_add(1, std::memory_order_release);
+                  while (loaded.load(std::memory_order_acquire) != 2)
+                      std::this_thread::yield();
+                  while (!released.load(std::memory_order_acquire))
+                      std::this_thread::yield();
+                  // This models the delayed old-order region dereference.
+                  query_after_release.fetch_add(1, std::memory_order_relaxed);
+                  (void)active.exchange(false, std::memory_order_acq_rel);
+              });
+              winner.join();
+              delayed_loser.join();
+              check(query_after_release.load(std::memory_order_relaxed) == 1);
+          }
+
+          struct SafePinModel {
+              std::atomic<bool> active{true};
+              std::atomic<bool> probe_claimed{false};
+              std::atomic<bool> retired{false};
+              std::atomic<bool> loan_released{false};
+              std::atomic<bool> pause_after_release{false};
+              std::atomic<bool> release_window_open{false};
+              std::atomic<bool> allow_active_publish{false};
+              std::atomic<unsigned> query_entries{0};
+              std::atomic<unsigned> query_after_release{0};
+
+              bool release_after_ticket_retirement() {
+                  if (!active.load(std::memory_order_acquire)) return false;
+
+                  bool expected = false;
+                  if (!probe_claimed.compare_exchange_strong(
+                          expected, true,
+                          std::memory_order_acq_rel,
+                          std::memory_order_acquire))
+                      return false;
+
+                  if (loan_released.load(std::memory_order_acquire))
+                      query_after_release.fetch_add(1, std::memory_order_relaxed);
+                  query_entries.fetch_add(1, std::memory_order_relaxed);
+
+                  if (!retired.load(std::memory_order_acquire)) {
+                      probe_claimed.store(false, std::memory_order_release);
+                      return false;
+                  }
+
+                  loan_released.store(true, std::memory_order_release);
+                  if (pause_after_release.load(std::memory_order_acquire)) {
+                      release_window_open.store(true, std::memory_order_release);
+                      while (!allow_active_publish.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                  }
+                  active.store(false, std::memory_order_release);
+                  return true;
+              }
+          };
+
+          static void run_release_window_cycle() {
+              SafePinModel pin;
+              pin.retired.store(true, std::memory_order_release);
+              pin.pause_after_release.store(true, std::memory_order_release);
+
+              std::atomic<int> winner_receipts{0};
+              std::thread winner([&] {
+                  if (pin.release_after_ticket_retirement())
+                      winner_receipts.fetch_add(1, std::memory_order_relaxed);
+              });
+
+              while (!pin.release_window_open.load(std::memory_order_acquire))
+                  std::this_thread::yield();
+
+              check(pin.loan_released.load(std::memory_order_acquire));
+              check(pin.active.load(std::memory_order_acquire));
+              const unsigned before =
+                  pin.query_entries.load(std::memory_order_relaxed);
+
+              constexpr int losers = 32;
+              std::atomic<int> loser_receipts{0};
+              std::vector<std::thread> threads;
+              threads.reserve(losers);
+              for (int i = 0; i < losers; ++i) {
+                  threads.emplace_back([&] {
+                      if (pin.release_after_ticket_retirement())
+                          loser_receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              for (auto& thread : threads) thread.join();
+
+              check(loser_receipts.load(std::memory_order_relaxed) == 0);
+              check(pin.query_entries.load(std::memory_order_relaxed) == before);
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+              check(pin.active.load(std::memory_order_acquire));
+
+              pin.allow_active_publish.store(true, std::memory_order_release);
+              winner.join();
+
+              check(winner_receipts.load(std::memory_order_relaxed) == 1);
+              check(!pin.active.load(std::memory_order_acquire));
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+          }
+
+          static void run_safe_cycle() {
+              SafePinModel pin;
+
+              constexpr int contenders = 32;
+              std::atomic<bool> start_early{false};
+              std::atomic<int> early_receipts{0};
+              std::vector<std::thread> threads;
+              threads.reserve(contenders);
+              for (int i = 0; i < contenders; ++i) {
+                  threads.emplace_back([&] {
+                      while (!start_early.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                      if (pin.release_after_ticket_retirement())
+                          early_receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              start_early.store(true, std::memory_order_release);
+              for (auto& thread : threads) thread.join();
+              check(early_receipts.load(std::memory_order_relaxed) == 0);
+              check(pin.active.load(std::memory_order_acquire));
+              check(!pin.probe_claimed.load(std::memory_order_acquire));
+              check(!pin.loan_released.load(std::memory_order_acquire));
+
+              const unsigned before = pin.query_entries.load(std::memory_order_relaxed);
+              pin.retired.store(true, std::memory_order_release);
+
+              std::atomic<bool> start_retired{false};
+              std::atomic<int> receipts{0};
+              threads.clear();
+              for (int i = 0; i < contenders; ++i) {
+                  threads.emplace_back([&] {
+                      while (!start_retired.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                      if (pin.release_after_ticket_retirement())
+                          receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              start_retired.store(true, std::memory_order_release);
+              for (auto& thread : threads) thread.join();
+
+              check(receipts.load(std::memory_order_relaxed) == 1);
+              check(pin.loan_released.load(std::memory_order_acquire));
+              check(!pin.active.load(std::memory_order_acquire));
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+              check(pin.query_entries.load(std::memory_order_relaxed) == before + 1);
+          }
+
+          int main() {
+              demonstrate_unsafe_old_order();
+              run_release_window_cycle();
+              for (int i = 0; i < 500; ++i) run_safe_cycle();
+              std::cout << "PUBLIC_CLAIM_BEFORE_PROBE_PASS cycles=500 contenders=32 release_window=forced\n";
+              return 0;
+          }
+          EOF
+
+          for compiler in g++ clang++; do
+            "$compiler" -std=c++20 -O2 -pthread -Wall -Wextra -Wpedantic -Werror \
+              "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-$compiler"
+            "$RUNNER_TEMP/claim-before-probe-$compiler"
+          done
+          clang++ -std=c++20 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-asan"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            "$RUNNER_TEMP/claim-before-probe-asan"
+          g++ -std=c++20 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=thread -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-tsan"
+          TSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/claim-before-probe-tsan"
+
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          git rev-parse 'HEAD^{tree}'
