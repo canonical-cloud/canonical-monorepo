@@ -122,6 +122,162 @@ jobs:
           clang -std=c11 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror             -fsanitize=address,undefined -fno-omit-frame-pointer             "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-sanitized"
           ASAN_OPTIONS=detect_leaks=1:halt_on_error=1           UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1             "$RUNNER_TEMP/cohort-sanitized"
 
+          cat >"$RUNNER_TEMP/rw-fairness.cpp" <<'EOF'
+          #include <array>
+          #include <cstdint>
+          #include <cstdlib>
+          #include <iostream>
+          #include <vector>
+
+          static void check(bool ok) {
+              if (!ok) std::abort();
+          }
+
+          enum class Access { Read, Write };
+
+          struct Ticket {
+              std::uint64_t sequence = 0;
+              Access access = Access::Read;
+              bool active = false;
+              bool waiting = false;
+          };
+
+          struct Gate {
+              std::uint64_t next_sequence = 0;
+              unsigned active_readers = 0;
+              bool active_writer = false;
+              std::vector<Ticket> tickets;
+
+              std::uint64_t request(Access access) {
+                  Ticket t;
+                  t.sequence = ++next_sequence;
+                  t.access = access;
+                  t.waiting = true;
+                  tickets.push_back(t);
+                  try_promote();
+                  return t.sequence;
+              }
+
+              Ticket* find(std::uint64_t seq) {
+                  for (auto& t : tickets)
+                      if (t.sequence == seq) return &t;
+                  return nullptr;
+              }
+
+              std::vector<std::uint64_t> release(std::uint64_t seq) {
+                  Ticket* t = find(seq);
+                  check(t != nullptr && t->active);
+                  if (t->access == Access::Write) {
+                      check(active_writer);
+                      active_writer = false;
+                  } else {
+                      check(active_readers > 0);
+                      --active_readers;
+                  }
+                  t->active = false;
+                  return promote_all();
+              }
+
+              bool can_start(std::uint64_t seq) {
+                  Ticket* t = find(seq);
+                  return t != nullptr && t->active;
+              }
+
+              Ticket* first_waiter() {
+                  Ticket* best = nullptr;
+                  for (auto& t : tickets) {
+                      if (!t.waiting) continue;
+                      if (!best || t.sequence < best->sequence) best = &t;
+                  }
+                  return best;
+              }
+
+              bool any_active() const {
+                  return active_writer || active_readers != 0;
+              }
+
+              void try_promote() {
+                  (void)promote_all();
+              }
+
+              std::vector<std::uint64_t> promote_all() {
+                  std::vector<std::uint64_t> admitted;
+                  for (;;) {
+                      Ticket* next = first_waiter();
+                      if (!next || active_writer) break;
+                      if (next->access == Access::Write && any_active()) break;
+                      next->waiting = false;
+                      next->active = true;
+                      if (next->access == Access::Write) {
+                          check(active_readers == 0);
+                          active_writer = true;
+                          admitted.push_back(next->sequence);
+                          break;
+                      }
+                      ++active_readers;
+                      admitted.push_back(next->sequence);
+                  }
+                  return admitted;
+              }
+          };
+
+          static void run_case(unsigned late_count) {
+              Gate gate;
+              const auto holder = gate.request(Access::Read);
+              check(gate.can_start(holder));
+
+              const auto writer = gate.request(Access::Write);
+              check(!gate.can_start(writer));
+
+              std::vector<std::uint64_t> late;
+              late.reserve(late_count);
+              for (unsigned i = 0; i < late_count; ++i) {
+                  late.push_back(gate.request(Access::Read));
+                  check(!gate.can_start(late.back()));
+                  check(writer < late.back());
+              }
+
+              auto wake = gate.release(holder);
+              check(wake.size() == 1);
+              check(wake[0] == writer);
+              check(gate.can_start(writer));
+              for (auto seq : late) check(!gate.can_start(seq));
+
+              wake = gate.release(writer);
+              check(wake.size() == late.size());
+              for (std::size_t i = 0; i < late.size(); ++i) {
+                  check(wake[i] == late[i]);
+                  check(gate.can_start(late[i]));
+              }
+
+              for (auto seq : late) {
+                  auto none = gate.release(seq);
+                  check(none.empty());
+              }
+              check(!gate.any_active());
+              check(gate.first_waiter() == nullptr);
+          }
+
+          int main() {
+              for (unsigned count : std::array<unsigned, 3>{3u, 7u, 15u})
+                  run_case(count);
+              std::cout << "PUBLIC_RW_FIFO_FAIRNESS_PASS late=3,7,15\n";
+              return 0;
+          }
+          EOF
+
+          for compiler in g++ clang++; do
+            "$compiler" -std=c++20 -O2 -Wall -Wextra -Wpedantic -Werror \
+              "$RUNNER_TEMP/rw-fairness.cpp" -o "$RUNNER_TEMP/rw-fairness-$compiler"
+            "$RUNNER_TEMP/rw-fairness-$compiler"
+          done
+          clang++ -std=c++20 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/rw-fairness.cpp" -o "$RUNNER_TEMP/rw-fairness-asan"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            "$RUNNER_TEMP/rw-fairness-asan"
+
           cat >"$RUNNER_TEMP/claim-before-probe.cpp" <<'EOF'
           #include <atomic>
           #include <cstdlib>
