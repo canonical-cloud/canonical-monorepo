@@ -85,6 +85,40 @@ jobs:
           PY
           python3 "$RUNNER_TEMP/manifest_coverage.py"
 
+          cat >"$RUNNER_TEMP/critical_alias.py" <<'PY'
+          import re
+
+          exact = re.compile(r"^critical(?:-(read|write)|\[(read|write)\])$")
+          accepted = {
+              "critical-read": "read",
+              "critical-write": "write",
+              "critical[read]": "read",
+              "critical[write]": "write",
+          }
+          rejected = [
+              "critical [write]",
+              "critical[ write]",
+              "critical[write ]",
+              "critical [ read ]",
+              "critical[unknown]",
+              "critical[read",
+              "criticalread",
+              "critical -write",
+          ]
+
+          for spelling, expected in accepted.items():
+              match = exact.fullmatch(spelling)
+              assert match is not None, spelling
+              actual = match.group(1) or match.group(2)
+              assert actual == expected, (spelling, actual, expected)
+
+          for spelling in rejected:
+              assert exact.fullmatch(spelling) is None, spelling
+
+          print("PUBLIC_CRITICAL_ALIAS_EXACT_PASS accepted=4 rejected=8")
+          PY
+          python3 "$RUNNER_TEMP/critical_alias.py"
+
           cat >"$RUNNER_TEMP/cohort.c" <<'EOF'
           #include <pthread.h>
           #include <sched.h>
