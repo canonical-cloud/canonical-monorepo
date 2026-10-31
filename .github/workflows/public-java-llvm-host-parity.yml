@@ -172,6 +172,9 @@ jobs:
               std::atomic<bool> probe_claimed{false};
               std::atomic<bool> retired{false};
               std::atomic<bool> loan_released{false};
+              std::atomic<bool> pause_after_release{false};
+              std::atomic<bool> release_window_open{false};
+              std::atomic<bool> allow_active_publish{false};
               std::atomic<unsigned> query_entries{0};
               std::atomic<unsigned> query_after_release{0};
 
@@ -195,10 +198,59 @@ jobs:
                   }
 
                   loan_released.store(true, std::memory_order_release);
+                  if (pause_after_release.load(std::memory_order_acquire)) {
+                      release_window_open.store(true, std::memory_order_release);
+                      while (!allow_active_publish.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                  }
                   active.store(false, std::memory_order_release);
                   return true;
               }
           };
+
+          static void run_release_window_cycle() {
+              SafePinModel pin;
+              pin.retired.store(true, std::memory_order_release);
+              pin.pause_after_release.store(true, std::memory_order_release);
+
+              std::atomic<int> winner_receipts{0};
+              std::thread winner([&] {
+                  if (pin.release_after_ticket_retirement())
+                      winner_receipts.fetch_add(1, std::memory_order_relaxed);
+              });
+
+              while (!pin.release_window_open.load(std::memory_order_acquire))
+                  std::this_thread::yield();
+
+              check(pin.loan_released.load(std::memory_order_acquire));
+              check(pin.active.load(std::memory_order_acquire));
+              const unsigned before =
+                  pin.query_entries.load(std::memory_order_relaxed);
+
+              constexpr int losers = 32;
+              std::atomic<int> loser_receipts{0};
+              std::vector<std::thread> threads;
+              threads.reserve(losers);
+              for (int i = 0; i < losers; ++i) {
+                  threads.emplace_back([&] {
+                      if (pin.release_after_ticket_retirement())
+                          loser_receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              for (auto& thread : threads) thread.join();
+
+              check(loser_receipts.load(std::memory_order_relaxed) == 0);
+              check(pin.query_entries.load(std::memory_order_relaxed) == before);
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+              check(pin.active.load(std::memory_order_acquire));
+
+              pin.allow_active_publish.store(true, std::memory_order_release);
+              winner.join();
+
+              check(winner_receipts.load(std::memory_order_relaxed) == 1);
+              check(!pin.active.load(std::memory_order_acquire));
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+          }
 
           static void run_safe_cycle() {
               SafePinModel pin;
@@ -249,8 +301,9 @@ jobs:
 
           int main() {
               demonstrate_unsafe_old_order();
+              run_release_window_cycle();
               for (int i = 0; i < 500; ++i) run_safe_cycle();
-              std::cout << "PUBLIC_CLAIM_BEFORE_PROBE_PASS cycles=500 contenders=32\n";
+              std::cout << "PUBLIC_CLAIM_BEFORE_PROBE_PASS cycles=500 contenders=32 release_window=forced\n";
               return 0;
           }
           EOF
