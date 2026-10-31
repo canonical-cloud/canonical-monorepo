@@ -60,5 +60,67 @@ jobs:
           "$RUNNER_TEMP/smoke"
           cmake --version
           ctest --version
+
+          cat >"$RUNNER_TEMP/cohort.c" <<'EOF'
+          #include <pthread.h>
+          #include <sched.h>
+          #include <stdatomic.h>
+          #include <stdio.h>
+          #include <stdlib.h>
+
+          typedef struct {
+              atomic_uint *ready;
+              atomic_bool *start;
+              atomic_uint *entered;
+          } arg_t;
+
+          static void check(int ok) {
+              if (!ok) abort();
+          }
+
+          static void *worker(void *raw) {
+              arg_t *arg = (arg_t *)raw;
+              atomic_fetch_add_explicit(arg->ready, 1u, memory_order_release);
+              while (!atomic_load_explicit(arg->start, memory_order_acquire))
+                  sched_yield();
+              atomic_fetch_add_explicit(arg->entered, 1u, memory_order_seq_cst);
+              return NULL;
+          }
+
+          static void run_case(unsigned count) {
+              pthread_t threads[15];
+              arg_t args[15];
+              atomic_uint ready = ATOMIC_VAR_INIT(0u);
+              atomic_bool start = ATOMIC_VAR_INIT(0);
+              atomic_uint entered = ATOMIC_VAR_INIT(0u);
+              check(count == 3u || count == 7u || count == 15u);
+              for (unsigned i = 0; i < count; ++i) {
+                  args[i] = (arg_t){&ready, &start, &entered};
+                  check(pthread_create(&threads[i], NULL, worker, &args[i]) == 0);
+              }
+              while (atomic_load_explicit(&ready, memory_order_acquire) != count)
+                  sched_yield();
+              check(atomic_load_explicit(&entered, memory_order_seq_cst) == 0u);
+              atomic_store_explicit(&start, 1, memory_order_release);
+              for (unsigned i = 0; i < count; ++i)
+                  check(pthread_join(threads[i], NULL) == 0);
+              check(atomic_load_explicit(&entered, memory_order_seq_cst) == count);
+          }
+
+          int main(void) {
+              run_case(3u);
+              run_case(7u);
+              run_case(15u);
+              puts("PUBLIC_C11_3_7_15_COHORT_PASS");
+              return 0;
+          }
+          EOF
+          for compiler in gcc clang; do
+            "$compiler" -std=c11 -O2 -pthread -Wall -Wextra -Wpedantic -Werror               "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-$compiler"
+            "$RUNNER_TEMP/cohort-$compiler"
+          done
+          clang -std=c11 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror             -fsanitize=address,undefined -fno-omit-frame-pointer             "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-sanitized"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1           UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1             "$RUNNER_TEMP/cohort-sanitized"
+
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git rev-parse 'HEAD^{tree}'
