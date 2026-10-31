@@ -122,5 +122,154 @@ jobs:
           clang -std=c11 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror             -fsanitize=address,undefined -fno-omit-frame-pointer             "$RUNNER_TEMP/cohort.c" -o "$RUNNER_TEMP/cohort-sanitized"
           ASAN_OPTIONS=detect_leaks=1:halt_on_error=1           UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1             "$RUNNER_TEMP/cohort-sanitized"
 
+          cat >"$RUNNER_TEMP/claim-before-probe.cpp" <<'EOF'
+          #include <atomic>
+          #include <cstdlib>
+          #include <iostream>
+          #include <thread>
+          #include <vector>
+
+          static void check(bool ok) {
+              if (!ok) std::abort();
+          }
+
+          // Deterministic counterexample for the old ordering:
+          // both observers see active=true before either owns a release claim.
+          // The delayed loser then performs its retirement query after release.
+          static void demonstrate_unsafe_old_order() {
+              std::atomic<bool> active{true};
+              std::atomic<bool> released{false};
+              std::atomic<int> loaded{0};
+              std::atomic<int> query_after_release{0};
+
+              std::thread winner([&] {
+                  check(active.load(std::memory_order_acquire));
+                  loaded.fetch_add(1, std::memory_order_release);
+                  while (loaded.load(std::memory_order_acquire) != 2)
+                      std::this_thread::yield();
+                  // Retirement query happens here in the old order.
+                  (void)active.exchange(false, std::memory_order_acq_rel);
+                  released.store(true, std::memory_order_release);
+              });
+              std::thread delayed_loser([&] {
+                  check(active.load(std::memory_order_acquire));
+                  loaded.fetch_add(1, std::memory_order_release);
+                  while (loaded.load(std::memory_order_acquire) != 2)
+                      std::this_thread::yield();
+                  while (!released.load(std::memory_order_acquire))
+                      std::this_thread::yield();
+                  // This models the delayed old-order region dereference.
+                  query_after_release.fetch_add(1, std::memory_order_relaxed);
+                  (void)active.exchange(false, std::memory_order_acq_rel);
+              });
+              winner.join();
+              delayed_loser.join();
+              check(query_after_release.load(std::memory_order_relaxed) == 1);
+          }
+
+          struct SafePinModel {
+              std::atomic<bool> active{true};
+              std::atomic<bool> probe_claimed{false};
+              std::atomic<bool> retired{false};
+              std::atomic<bool> loan_released{false};
+              std::atomic<unsigned> query_entries{0};
+              std::atomic<unsigned> query_after_release{0};
+
+              bool release_after_ticket_retirement() {
+                  if (!active.load(std::memory_order_acquire)) return false;
+
+                  bool expected = false;
+                  if (!probe_claimed.compare_exchange_strong(
+                          expected, true,
+                          std::memory_order_acq_rel,
+                          std::memory_order_acquire))
+                      return false;
+
+                  if (loan_released.load(std::memory_order_acquire))
+                      query_after_release.fetch_add(1, std::memory_order_relaxed);
+                  query_entries.fetch_add(1, std::memory_order_relaxed);
+
+                  if (!retired.load(std::memory_order_acquire)) {
+                      probe_claimed.store(false, std::memory_order_release);
+                      return false;
+                  }
+
+                  loan_released.store(true, std::memory_order_release);
+                  active.store(false, std::memory_order_release);
+                  return true;
+              }
+          };
+
+          static void run_safe_cycle() {
+              SafePinModel pin;
+
+              constexpr int contenders = 32;
+              std::atomic<bool> start_early{false};
+              std::atomic<int> early_receipts{0};
+              std::vector<std::thread> threads;
+              threads.reserve(contenders);
+              for (int i = 0; i < contenders; ++i) {
+                  threads.emplace_back([&] {
+                      while (!start_early.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                      if (pin.release_after_ticket_retirement())
+                          early_receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              start_early.store(true, std::memory_order_release);
+              for (auto& thread : threads) thread.join();
+              check(early_receipts.load(std::memory_order_relaxed) == 0);
+              check(pin.active.load(std::memory_order_acquire));
+              check(!pin.probe_claimed.load(std::memory_order_acquire));
+              check(!pin.loan_released.load(std::memory_order_acquire));
+
+              const unsigned before = pin.query_entries.load(std::memory_order_relaxed);
+              pin.retired.store(true, std::memory_order_release);
+
+              std::atomic<bool> start_retired{false};
+              std::atomic<int> receipts{0};
+              threads.clear();
+              for (int i = 0; i < contenders; ++i) {
+                  threads.emplace_back([&] {
+                      while (!start_retired.load(std::memory_order_acquire))
+                          std::this_thread::yield();
+                      if (pin.release_after_ticket_retirement())
+                          receipts.fetch_add(1, std::memory_order_relaxed);
+                  });
+              }
+              start_retired.store(true, std::memory_order_release);
+              for (auto& thread : threads) thread.join();
+
+              check(receipts.load(std::memory_order_relaxed) == 1);
+              check(pin.loan_released.load(std::memory_order_acquire));
+              check(!pin.active.load(std::memory_order_acquire));
+              check(pin.query_after_release.load(std::memory_order_relaxed) == 0);
+              check(pin.query_entries.load(std::memory_order_relaxed) == before + 1);
+          }
+
+          int main() {
+              demonstrate_unsafe_old_order();
+              for (int i = 0; i < 500; ++i) run_safe_cycle();
+              std::cout << "PUBLIC_CLAIM_BEFORE_PROBE_PASS cycles=500 contenders=32\n";
+              return 0;
+          }
+          EOF
+
+          for compiler in g++ clang++; do
+            "$compiler" -std=c++20 -O2 -pthread -Wall -Wextra -Wpedantic -Werror \
+              "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-$compiler"
+            "$RUNNER_TEMP/claim-before-probe-$compiler"
+          done
+          clang++ -std=c++20 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-asan"
+          ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            "$RUNNER_TEMP/claim-before-probe-asan"
+          g++ -std=c++20 -O1 -g -pthread -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=thread -fno-omit-frame-pointer \
+            "$RUNNER_TEMP/claim-before-probe.cpp" -o "$RUNNER_TEMP/claim-before-probe-tsan"
+          TSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/claim-before-probe-tsan"
+
           test -z "$(git status --porcelain=v1 --untracked-files=all)"
           git rev-parse 'HEAD^{tree}'
