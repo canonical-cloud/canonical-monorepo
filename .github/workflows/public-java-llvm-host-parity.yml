@@ -61,6 +61,30 @@ jobs:
           cmake --version
           ctest --version
 
+          cat >"$RUNNER_TEMP/manifest_coverage.py" <<'PY'
+          executed = {
+              "driver", "compiler", "runtime_a", "runtime_b", "runtime_c",
+              "runtime_d", "runtime_e", "runtime_f", "runtime_g", "runtime_h"
+          }
+          triggers = set(executed)
+          provenance = set(executed)
+
+          def missing(covered):
+              return sorted(executed - covered)
+
+          assert missing(triggers) == []
+          assert missing(provenance) == []
+
+          # Negative control: one executed dependency omitted from provenance
+          # must be detected exactly, not silently accepted.
+          broken = set(provenance)
+          broken.remove("runtime_f")
+          assert missing(broken) == ["runtime_f"]
+
+          print("PUBLIC_MANIFEST_COVERAGE_PASS executed=10 negative_missing=runtime_f")
+          PY
+          python3 "$RUNNER_TEMP/manifest_coverage.py"
+
           cat >"$RUNNER_TEMP/cohort.c" <<'EOF'
           #include <pthread.h>
           #include <sched.h>
