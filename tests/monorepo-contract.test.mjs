@@ -377,14 +377,23 @@ test("monorepo scripts keep destructive actions manual and include dry-run/audit
     "audit-repo-state.sh",
     "checkout-feature-branch.sh",
     "pin-submodules.sh",
+    "private-cargo-askpass.sh",
     "stack-smoke.sh",
   ]);
 
   for (const script of scripts) {
     const body = read(`scripts/${script}`);
+    assert.doesNotMatch(body, /\bgit\s+push\b/);
+    if (script === "private-cargo-askpass.sh") {
+      // Credential helpers use POSIX sh; regular build scripts use Bash.
+      assert.ok(body.startsWith("#!/bin/sh\n"));
+      assert.match(body, /set -eu/);
+      assert.match(body, /x-access-token@github\.com/);
+      assert.doesNotMatch(body, /\b(?:curl|wget)\b/);
+      continue;
+    }
     assert.ok(body.startsWith("#!/usr/bin/env bash\n"));
     assert.match(body, /set -euo pipefail/);
-    assert.doesNotMatch(body, /\bgit\s+push\b/);
   }
 
   for (const script of ["audit-repo-state.sh", "checkout-feature-branch.sh", "pin-submodules.sh"]) {
@@ -420,48 +429,54 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("canonical agents.md owns command safety while uppercase entrypoints stay pointers", () => {
+test("agent policy resolves modern uppercase or exact legacy lowercase pointer", () => {
+  const exactLegacyPointer = "# Agent instructions\n\nCanonical repository instructions live in [`agents.md`](agents.md).\n";
   const repositories = [
     "",
     ...parseGitmodules()
-      .filter((module) => module.private !== "true" || existsSync(path.join(root, module.path, "agents.md")))
+      .filter((module) => module.private !== "true" ||
+        existsSync(path.join(root, module.path, "AGENTS.md")) ||
+        existsSync(path.join(root, module.path, "agents.md")))
       .map((module) => module.path),
   ];
 
   for (const repository of repositories) {
     const label = repository || ".";
-    const canonicalPath = path.join(root, repository, "agents.md");
-    const pointerPath = path.join(root, repository, "AGENTS.md");
-    const canonical = read(path.join(repository, "agents.md"));
-
-    assert.match(canonical, /Command safety/, `${label}/agents.md needs a Command safety section`);
-    assert.match(canonical, /git rm/, `${label}/agents.md must whitelist git rm`);
-    assert.match(canonical, /git mv/, `${label}/agents.md must whitelist git mv`);
-
-    // Lowercase `agents.md` is the required authority. Some app repositories
-    // intentionally omit the optional uppercase compatibility pointer; Linux
-    // CI must not infer that path from macOS's case-insensitive filesystem.
-    if (!existsSync(pointerPath)) {
-      continue;
+    const upperPath = path.join(root, repository, "AGENTS.md");
+    const lowerPath = path.join(root, repository, "agents.md");
+    const hasUpper = existsSync(upperPath);
+    const hasLower = existsSync(lowerPath);
+    assert.ok(hasUpper || hasLower, `${label} needs an agent safety policy`);
+    let canonical;
+    if (!hasUpper) {
+      // Preserve historically accepted lowercase-only legacy repositories.
+      canonical = read(path.join(repository, "agents.md"));
+    } else if (!hasLower) {
+      // Modern policy: uppercase AGENTS.md is the sole canonical authority.
+      canonical = read(path.join(repository, "AGENTS.md"));
+    } else {
+      const samePhysicalFile =
+        statSync(upperPath).dev === statSync(lowerPath).dev &&
+        statSync(upperPath).ino === statSync(lowerPath).ino;
+      if (samePhysicalFile) {
+        canonical = read(path.join(repository, "AGENTS.md"));
+      } else {
+        const upperText = read(path.join(repository, "AGENTS.md"));
+        const lowerText = read(path.join(repository, "agents.md"));
+        if (upperText === lowerText) {
+          // The pinned API repo intentionally carries two byte-identical aliases.
+          // This is permitted by the organization policy, not conflicting authority.
+          canonical = upperText;
+        } else {
+          // Legacy migration requires one authoritative lowercase file and an exact pointer.
+          assert.equal(upperText, exactLegacyPointer,
+            `${label}/AGENTS.md must be exact approved legacy pointer or identical policy`);
+          canonical = lowerText;
+        }
+      }
     }
-
-    const pointer = read(path.join(repository, "AGENTS.md"));
-    const samePhysicalFile =
-      statSync(canonicalPath).dev === statSync(pointerPath).dev &&
-      statSync(canonicalPath).ino === statSync(pointerPath).ino;
-    if (samePhysicalFile) {
-      // Case-insensitive filesystems cannot materialize both tracked names.
-      // The indexed repository still carries the uppercase pointer; locally,
-      // verify the canonical lowercase policy instead of treating the alias as
-      // independent content.
-      continue;
-    }
-
-    assert.match(pointer, /agents\.md/, `${label}/AGENTS.md must point to lowercase agents.md`);
-    assert.doesNotMatch(
-      pointer,
-      /## Command safety|Blacklisted \(never run\)|Whitelisted \(prefer these\)/,
-      `${label}/AGENTS.md must not duplicate canonical policy`,
-    );
+    assert.match(canonical, /Command safety/, `${label} canonical policy needs Command safety`);
+    assert.match(canonical, /git rm/, `${label} canonical policy must whitelist git rm`);
+    assert.match(canonical, /git mv/, `${label} canonical policy must whitelist git mv`);
   }
 });
